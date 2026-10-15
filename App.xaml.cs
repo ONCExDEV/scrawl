@@ -27,6 +27,7 @@ public partial class App : Application
         var window = new MainWindow { StartupFiles = e.Args };
         MainWindow = window;
         window.Show();
+        _ = Task.Run(Services.SystemIntegration.RefreshTextFileIcon);
         _ = Task.Run(() => ListenForFiles(window));
     }
 

@@ -11,6 +11,9 @@ public static class SystemIntegration
     private const string ProgId = "Scrawl.Document";
     private static readonly string[] Extensions = [".txt", ".md", ".log"];
 
+    /// <summary>Text files keep Windows' normal text document icon instead of the Scrawl logo.</summary>
+    private const string TextFileIcon = @"%SystemRoot%\system32\imageres.dll,-102";
+
     private static string ExePath
     {
         get
@@ -49,7 +52,7 @@ public static class SystemIntegration
         {
             progId.SetValue(string.Empty, "Scrawl note");
             using var icon = progId.CreateSubKey("DefaultIcon");
-            icon.SetValue(string.Empty, exe + ",0");
+            icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
             using var command = progId.CreateSubKey(@"shell\open\command");
             command.SetValue(string.Empty, $"\"{exe}\" \"%1\"");
         }
@@ -73,6 +76,27 @@ public static class SystemIntegration
 
         SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
         Process.Start(new ProcessStartInfo("ms-settings:defaultapps") { UseShellExecute = true });
+    }
+
+    /// <summary>
+    /// Earlier versions showed the Scrawl logo on text files. If Scrawl was set up before, switch it to the normal text icon.
+    /// Only the icon is touched, never the program path.
+    /// </summary>
+    public static void RefreshTextFileIcon()
+    {
+        try
+        {
+            using var progId = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{ProgId}", writable: true);
+            if (progId is null) return;
+            using var icon = progId.CreateSubKey("DefaultIcon");
+            if (icon.GetValue(string.Empty, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string == TextFileIcon) return;
+            icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
+            SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            // The icon is cosmetic; ignore registry problems.
+        }
     }
 
     [DllImport("shell32.dll")]
