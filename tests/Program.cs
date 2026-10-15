@@ -1,11 +1,10 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
-using Morrow;
-using Morrow.Models;
-using Morrow.Services;
+using System.Windows.Threading;
+using Scrawl.Controls;
+using Scrawl;
+using Scrawl.Models;
+using Scrawl.Services;
 
 internal static class Program
 {
@@ -17,56 +16,62 @@ internal static class Program
         _ = new MainWindow();
         Console.WriteLine("PASS: main window XAML initializes");
 
-        var dataDirectory = Path.Combine(Environment.CurrentDirectory, $".morrow-smoke-{Guid.NewGuid():N}");
-        Environment.SetEnvironmentVariable("MORROW_DATA_DIR", dataDirectory);
+        var dataDirectory = Path.Combine(Environment.CurrentDirectory, $".scrawl-smoke-{Guid.NewGuid():N}");
+        Environment.SetEnvironmentVariable("SCRAWL_DATA_DIR", dataDirectory);
         try
         {
-            var note = new Note { Title = "A useful thought", Content = "Some words\n```csharp\nvar answer = 42;\n```", IsPinned = true };
+            var note = new Note { Title = "A useful thought", Content = "var answer = 42;", Language = "csharp", IsPinned = true };
             var store = new NoteStore();
             store.SaveAsync([note]).GetAwaiter().GetResult();
             var loaded = store.LoadAsync().GetAwaiter().GetResult();
             Assert(loaded.Count == 1, "one saved note loads");
             Assert(loaded[0].Id == note.Id, "note id survives saving");
             Assert(loaded[0].Title == note.Title && loaded[0].Content == note.Content, "note text survives saving");
-            Assert(loaded[0].IsPinned, "pinned state survives saving");
+            Assert(loaded[0].IsPinned && loaded[0].Language == "csharp", "pinned state and language survive saving");
             Assert(!File.Exists(Path.Combine(dataDirectory, "notes.json.tmp")), "atomic save leaves no temporary file");
-
-            var preview = new StackPanel();
-            MarkdownRenderer.Render(preview, "# Welcome\n\nA **clear** note with `inline code`.\n\n- one item\n\n```csharp\nvar answer = 42;\n```");
-            Assert(FindText(preview, "Welcome"), "Markdown heading renders");
-            Assert(preview.Children.OfType<Border>().Any(), "code block renders in a code card");
-            Assert(FindText(preview, "C#") || FindText(preview, "CSHARP"), "code language label renders");
-            Assert(FindText(preview, "answer"), "code content renders");
-
-            MarkdownRenderer.Render(preview, "    const answer = 42;");
-            Assert(preview.Children.OfType<Border>().Any(), "indented code is detected automatically");
-            MarkdownRenderer.Render(preview, "var message = \"Hello, Morrow!\";\nConsole.WriteLine(message);");
-            Assert(preview.Children.OfType<Border>().Any(), "a clear unwrapped code snippet is detected automatically");
-            Assert(FindText(preview, "CSHARP"), "language is inferred for an unwrapped C# snippet");
-            var purple = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#7768E8");
-            Assert(Descendants<TextBlock>(preview).SelectMany(block => block.Inlines.OfType<Run>()).Any(run => run.Text == "var" && run.Foreground is System.Windows.Media.SolidColorBrush brush && brush.Color == purple), "code keywords receive syntax colors");
+            Assert(new Note { Language = "markdown" }.Language == "text", "legacy markdown notes become plain notes");
             Console.WriteLine("PASS: notes save, reload, and preserve their fields");
-            Console.WriteLine("PASS: Markdown, fenced and indented code, and automatic C# detection render");
+
+            Assert(CodeHighlighter.Tokenize("const x = 42 + \"hi\"; // note", "javascript").Select(t => t.Kind).Distinct().Count() >= 4, "highlighter finds keywords, numbers, strings and comments");
+            Assert(!CodeHighlighter.Tokenize("const x = 1;", "text").Any(), "plain text is never colored");
+            Assert(CodeHighlighter.Guess("using System;\nnamespace Demo;\npublic class A { }") == "csharp", "C# is detected");
+            Assert(CodeHighlighter.Guess("just a grocery list\nmilk\neggs") is null, "ordinary text is not mistaken for code");
+            Assert(Themes.All.All(theme => theme.Colors.Length == Themes.Keys.Length), "every theme defines every color");
+            Console.WriteLine("PASS: syntax highlighting, language detection and themes");
+
+            var first = new Note { Title = "First", Content = string.Join('\n', "alpha", "  beta"), Language = "csharp" };
+            var second = new Note { Title = "Second", Content = "gamma", Language = "text" };
+            var pane = new NotePane();
+            pane.Load(first);
+            pane.Load(second);
+            pane.Load(first);
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+            Assert(first.Content == string.Join('\n', "alpha", "  beta") && second.Content == "gamma", "switching notes in a pane never changes their text");
+            Assert(first.Language == "csharp" && second.Language == "text", "switching notes in a pane never changes their language");
+            pane.Editor.Document.Insert(0, "x");
+            Assert(first.Content.StartsWith("xalpha") && second.Content == "gamma", "typing edits only the note shown in the pane");
+            Console.WriteLine("PASS: panes keep notes separate");
+
+            var secret = new Note { Title = "Secret", Content = "the launch code is 1234" };
+            NoteLock.Lock(secret, "hunter2");
+            Assert(secret.IsLocked && !secret.IsUnlocked && secret.Content.Length == 0, "locking clears the text from memory");
+            store.SaveAsync([secret]).GetAwaiter().GetResult();
+            var onDisk = File.ReadAllText(Path.Combine(dataDirectory, "notes.json"));
+            Assert(!onDisk.Contains("launch code"), "a locked note is never written as plain text");
+            var reloaded = store.LoadAsync().GetAwaiter().GetResult()[0];
+            Assert(reloaded.IsLocked && !NoteLock.TryUnlock(reloaded, "wrong"), "a wrong password does not unlock");
+            Assert(NoteLock.TryUnlock(reloaded, "hunter2") && reloaded.Content == "the launch code is 1234", "the right password restores the text");
+            Assert(NoteLock.Verify(reloaded, "hunter2") && !NoteLock.Verify(reloaded, "nope"), "passwords can be verified without unlocking");
+            reloaded.Content = "changed";
+            store.SaveAsync([reloaded]).GetAwaiter().GetResult();
+            var again = store.LoadAsync().GetAwaiter().GetResult()[0];
+            Assert(NoteLock.TryUnlock(again, "hunter2") && again.Content == "changed", "edits to an unlocked note are saved encrypted");
+            Console.WriteLine("PASS: password locked notes are encrypted on disk");
         }
         finally
         {
             if (Directory.Exists(dataDirectory)) Directory.Delete(dataDirectory, recursive: true);
         }
-    }
-
-    private static bool FindText(DependencyObject root, string text)
-    {
-        if (root is TextBlock block && (block.Text + string.Concat(block.Inlines.OfType<Run>().Select(run => run.Text))).Contains(text, StringComparison.OrdinalIgnoreCase)) return true;
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            if (FindText(VisualTreeHelper.GetChild(root, i), text)) return true;
-        return false;
-    }
-
-    private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
-    {
-        if (root is T match) yield return match;
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            foreach (var child in Descendants<T>(VisualTreeHelper.GetChild(root, i))) yield return child;
     }
 
     private static void Assert(bool condition, string description)

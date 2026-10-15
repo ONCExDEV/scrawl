@@ -8,3 +8,5 @@ TestResults/
 *.tmp
 test-data/
 verification-output/
+
+publish/
