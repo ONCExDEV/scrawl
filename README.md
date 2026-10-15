@@ -72,7 +72,7 @@ It is a single ~1 MB executable. No installer, no account, no telemetry, no netw
 2. Put it anywhere and start it.
 3. On the first start Scrawl asks whether to create a desktop shortcut and whether to use it for text files.
 
-`Scrawl.exe` needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime). If it is missing, Windows shows a link to install it. Prefer not to install anything? Download `Scrawl-standalone.exe` instead: the same app with the runtime included (about 70 MB).
+`Scrawl.exe` needs the [.NET Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime), version 8 or newer (9 and 10 work too). If it is missing, Windows shows a link to install it. Prefer not to install anything? Download `Scrawl-standalone.exe` instead: the same app with the runtime included (about 70 MB).
 
 > Windows SmartScreen may warn about an unsigned app the first time. Choose "More info", then "Run anyway". The source is in this repository if you prefer to build it yourself (see [Build](#build)).
 
@@ -122,7 +122,7 @@ dotnet run --project Scrawl.csproj                       # run
 dotnet run --project tests/Scrawl.SmokeTests.csproj      # smoke checks
 ```
 
-Build the small `Scrawl.exe` (needs the .NET 8 Desktop Runtime to run):
+Build the small `Scrawl.exe` (needs the .NET Desktop Runtime, version 8 or newer, to run):
 
 ```powershell
 dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish

@@ -169,8 +169,9 @@
                 </Popup>
 
 
+                <!-- Overlays start below the top bar, so the window buttons always work -->
                 <!-- Settings -->
-                <Grid x:Name="SettingsLayer" Visibility="Collapsed">
+                <Grid x:Name="SettingsLayer" Visibility="Collapsed" Margin="0,40,0,0">
                     <Border Background="#99000000" MouseDown="SettingsScrim_MouseDown"/>
                     <Border Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="18" Width="540" MaxHeight="640" HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid>
@@ -247,7 +248,7 @@
                 </Grid>
 
                 <!-- First start -->
-                <Grid x:Name="WelcomeLayer" Visibility="Collapsed">
+                <Grid x:Name="WelcomeLayer" Visibility="Collapsed" Margin="0,40,0,0">
                     <Border Background="#B3000000"/>
                     <Border Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="20" Width="470" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="32,30,32,26">
                         <StackPanel>
@@ -275,7 +276,7 @@
                 </Grid>
 
                 <!-- In-app dialog -->
-                <Grid x:Name="DialogLayer" Visibility="Collapsed">
+                <Grid x:Name="DialogLayer" Visibility="Collapsed" Margin="0,40,0,0">
                     <Border Background="#99000000" MouseDown="DialogScrim_MouseDown"/>
                     <Border Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="18" Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="26,24,26,20">
                         <StackPanel>

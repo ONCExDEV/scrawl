@@ -30,7 +30,7 @@ public sealed class NoteStore
     }
 
     private readonly string _filePath = Path.Combine(DataDirectory, "notes.json");
-    private readonly SemaphoreSlim _saveLock = new(1, 1);
+    private readonly object _writeLock = new();
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
     public bool Exists => File.Exists(_filePath);
@@ -47,26 +47,36 @@ public sealed class NoteStore
         }).ToList();
     }
 
-    public async Task SaveAsync(IEnumerable<Note> notes)
+    /// <summary>Seals locked notes and copies everything into plain records, on the calling (UI) thread.</summary>
+    private static List<Stored> Snapshot(IEnumerable<Note> notes)
     {
-        await _saveLock.WaitAsync();
-        try
+        var stored = new List<Stored>();
+        foreach (var note in notes)
         {
-            var stored = new List<Stored>();
-            foreach (var note in notes)
-            {
-                if (note.IsLocked && note.Key is not null) note.Vault = NoteLock.Encrypt(note.Content, note.Key);
-                stored.Add(new Stored(note.Id, note.Title, note.IsLocked ? string.Empty : note.Content, note.Language, note.IsPinned, note.UpdatedAt, note.LockSalt, note.IsLocked ? note.Vault : null));
-            }
+            if (note.IsLocked && note.Key is not null) note.Vault = NoteLock.Encrypt(note.Content, note.Key);
+            stored.Add(new Stored(note.Id, note.Title, note.IsLocked ? string.Empty : note.Content, note.Language, note.IsPinned, note.UpdatedAt, note.LockSalt, note.IsLocked ? note.Vault : null));
+        }
+        return stored;
+    }
+
+    private void Write(List<Stored> stored)
+    {
+        lock (_writeLock)
+        {
             Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
             var temporaryPath = _filePath + ".tmp";
-            await using (var stream = new FileStream(temporaryPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true))
-                await JsonSerializer.SerializeAsync(stream, stored, Options);
+            File.WriteAllBytes(temporaryPath, JsonSerializer.SerializeToUtf8Bytes(stored, Options));
             File.Move(temporaryPath, _filePath, overwrite: true);
         }
-        finally
-        {
-            _saveLock.Release();
-        }
     }
+
+    /// <summary>Saves without blocking the UI thread.</summary>
+    public Task SaveAsync(IEnumerable<Note> notes)
+    {
+        var stored = Snapshot(notes);
+        return Task.Run(() => Write(stored));
+    }
+
+    /// <summary>Saves right now. Used when the window closes (never wait on an async save from the UI thread: that deadlocks).</summary>
+    public void Save(IEnumerable<Note> notes) => Write(Snapshot(notes));
 }

@@ -60,7 +60,7 @@ public partial class MainWindow : Window
         {
             _saveTimer.Stop();
             _settings.Save();
-            if (_notesView is not null) _store.SaveAsync(_notes.ToList()).GetAwaiter().GetResult();
+            if (_notesView is not null) _store.Save(_notes.ToList());
         };
     }
 
