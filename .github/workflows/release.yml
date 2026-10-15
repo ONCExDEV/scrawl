@@ -16,9 +16,11 @@ jobs:
         with:
           dotnet-version: 8.0.x
       - name: Publish small exe (needs the .NET 8 Desktop Runtime)
-        run: dotnet publish Scrawl.csproj -c Release -r win-x64 --no-incremental -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish-small
+        run: dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish-small
+      - name: Clean build folders
+        run: Remove-Item -Recurse -Force obj, bin
       - name: Publish standalone exe (runtime included)
-        run: dotnet publish Scrawl.csproj -c Release -r win-x64 --no-incremental -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish-standalone
+        run: dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish-standalone
       - name: Create release
         shell: bash
         env:
