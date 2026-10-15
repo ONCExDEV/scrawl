@@ -10,3 +10,6 @@ test-data/
 verification-output/
 
 publish/
+
+# Built executables live in GitHub releases, not in the repo
+*.exe
