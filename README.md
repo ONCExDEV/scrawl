@@ -9,7 +9,7 @@ Plain notes, code with VS Code colors, and up to four notes side by side.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078d4)
 ![Built with](https://img.shields.io/badge/built%20with-.NET%208%20%2B%20WPF-512bd4)
-![Size](https://img.shields.io/badge/exe-~70%20MB-3fb950)
+![Size](https://img.shields.io/badge/exe-~1%20MB-3fb950)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 <img src="docs/main-dark.png" alt="Scrawl with a Python note next to a plain text note" width="760">
@@ -20,7 +20,7 @@ Plain notes, code with VS Code colors, and up to four notes side by side.
 
 Most notes apps are either too plain or too heavy. Scrawl keeps two kinds of notes in one small window: **Notepad** notes that behave exactly like a classic notepad, and **Code** notes with syntax colors, line numbers and auto-indent. Open several at once, lock the private ones with a password, and everything stays on your device.
 
-It is a single executable. No installer, no account, no telemetry, no network access.
+It is a single ~1 MB executable. No installer, no account, no telemetry, no network access.
 
 ## Features
 
@@ -68,13 +68,15 @@ It is a single executable. No installer, no account, no telemetry, no network ac
 
 ## Install
 
-1. Download `Scrawl.exe` from the [latest release](../../releases/latest).
+1. Download `Scrawl.exe` from the [latest release](../../releases/latest) (about 1 MB).
 2. Put it anywhere and start it.
 3. On the first start Scrawl asks whether to create a desktop shortcut and whether to use it for text files.
 
+`Scrawl.exe` needs the [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0/runtime). If it is missing, Windows shows a link to install it. Prefer not to install anything? Download `Scrawl-standalone.exe` instead: the same app with the runtime included (about 70 MB).
+
 > Windows SmartScreen may warn about an unsigned app the first time. Choose "More info", then "Run anyway". The source is in this repository if you prefer to build it yourself (see [Build](#build)).
 
-Requires Windows 10 or 11. Nothing else needs to be installed.
+Requires Windows 10 or 11.
 
 ## Using it
 
@@ -120,13 +122,15 @@ dotnet run --project Scrawl.csproj                       # run
 dotnet run --project tests/Scrawl.SmokeTests.csproj      # smoke checks
 ```
 
-Build the single-file `Scrawl.exe` yourself:
+Build the small `Scrawl.exe` (needs the .NET 8 Desktop Runtime to run):
 
 ```powershell
-dotnet publish Scrawl.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
+dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish
 ```
 
-Pushing a tag like `v1.0.0` builds this on GitHub and attaches it to a release.
+For the standalone build with the runtime included, use `-p:SelfContained=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true` instead.
+
+Pushing a tag like `v1.0.1` builds both on GitHub and attaches them to a release.
 
 The only dependency is the [AvalonEdit](https://github.com/icsharpcode/AvalonEdit) editor control.
 

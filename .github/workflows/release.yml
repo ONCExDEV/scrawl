@@ -15,10 +15,15 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Publish single-file exe
-        run: dotnet publish Scrawl.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish
+      - name: Publish small exe (needs the .NET 8 Desktop Runtime)
+        run: dotnet publish Scrawl.csproj -c Release -r win-x64 --no-incremental -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish-small
+      - name: Publish standalone exe (runtime included)
+        run: dotnet publish Scrawl.csproj -c Release -r win-x64 --no-incremental -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish-standalone
       - name: Create release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" publish/Scrawl.exe --generate-notes --title "Scrawl $GITHUB_REF_NAME"
+        run: |
+          mv publish-standalone/Scrawl.exe Scrawl-standalone.exe
+          ls -l publish-small/Scrawl.exe Scrawl-standalone.exe
+          gh release create "$GITHUB_REF_NAME" publish-small/Scrawl.exe Scrawl-standalone.exe --generate-notes --title "Scrawl $GITHUB_REF_NAME"
