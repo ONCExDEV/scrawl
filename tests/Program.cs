@@ -11,6 +11,9 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // Never talk to a Scrawl the user has open (single-instance mutex and pipe are named after this id).
+        Environment.SetEnvironmentVariable("SCRAWL_INSTANCE", "tests-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("SCRAWL_NO_WINDOW", "1");
         var app = new App();
         app.InitializeComponent();
         _ = new MainWindow();

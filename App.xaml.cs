@@ -8,7 +8,9 @@ namespace Scrawl;
 
 public partial class App : Application
 {
-    private const string PipeName = "Scrawl.OpenFiles";
+    // The tests (and anyone running a second copy on purpose) set SCRAWL_INSTANCE so they never talk to a real Scrawl.
+    private static readonly string InstanceSuffix = Environment.GetEnvironmentVariable("SCRAWL_INSTANCE") is { Length: > 0 } id ? "." + id : string.Empty;
+    private static readonly string PipeName = "Scrawl.OpenFiles" + InstanceSuffix;
     private Mutex? _singleInstance;
 
     /// <summary>
@@ -17,7 +19,10 @@ public partial class App : Application
     /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
-        _singleInstance = new Mutex(true, "Scrawl.SingleInstance", out var isFirst);
+        // The smoke tests drive windows themselves; they must never get a real window of their own on someone's screen.
+        if (Environment.GetEnvironmentVariable("SCRAWL_NO_WINDOW") == "1") { base.OnStartup(e); return; }
+
+        _singleInstance = new Mutex(true, "Scrawl.SingleInstance" + InstanceSuffix, out var isFirst);
         if (!isFirst)
         {
             SendToRunningInstance(e.Args);
