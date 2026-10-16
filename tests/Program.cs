@@ -67,11 +67,76 @@ internal static class Program
             var again = store.LoadAsync().GetAwaiter().GetResult()[0];
             Assert(NoteLock.TryUnlock(again, "hunter2") && again.Content == "changed", "edits to an unlocked note are saved encrypted");
             Console.WriteLine("PASS: password locked notes are encrypted on disk");
+
+            // Notes opened from a file save back to it (the "edit, then reopen the file" case).
+            var linked = new LinkedFiles();
+            var textFile = Path.Combine(dataDirectory, "exported.txt");
+            File.WriteAllText(textFile, "first line\r\nsecond line");
+            var snapshot = LinkedFiles.Read(textFile);
+            var fileNote = new Note { Title = "exported", Content = snapshot.Text, FilePath = textFile };
+            linked.Track(fileNote, snapshot);
+            Assert(linked.Flush([fileNote]) is null && File.ReadAllText(textFile) == "first line\r\nsecond line", "an unchanged linked note does not touch its file");
+            fileNote.Content = "changed text\nsecond line";
+            Assert(linked.Flush([fileNote]) is null, "saving a linked note succeeds");
+            Assert(File.ReadAllText(textFile) == "changed text\r\nsecond line", "edits are written back to the file and Windows line endings are kept");
+            Assert(LinkedFiles.Read(textFile).Text == fileNote.Content, "reopening the file shows the edited text");
+
+            var unixFile = Path.Combine(dataDirectory, "unix.txt");
+            File.WriteAllText(unixFile, "a\nb\n");
+            var unixSnapshot = LinkedFiles.Read(unixFile);
+            var unixNote = new Note { Content = unixSnapshot.Text + "c\n", FilePath = unixFile };
+            linked.Track(unixNote, unixSnapshot);
+            linked.Flush([unixNote]);
+            Assert(File.ReadAllText(unixFile) == "a\nb\nc\n", "LF files stay LF");
+
+            var ansiFile = Path.Combine(dataDirectory, "ansi.txt");
+            File.WriteAllBytes(ansiFile, [0x63, 0x61, 0x66, 0xE9]);   // "café" in Windows-1252, not valid UTF-8
+            var ansiSnapshot = LinkedFiles.Read(ansiFile);
+            Assert(ansiSnapshot.Text == "café", "non-UTF-8 files are read without garbling");
+            var ansiNote = new Note { Content = "café!", FilePath = ansiFile };
+            linked.Track(ansiNote, ansiSnapshot);
+            linked.Flush([ansiNote]);
+            Assert(File.ReadAllBytes(ansiFile).SequenceEqual(new byte[] { 0x63, 0x61, 0x66, 0xE9, 0x21 }), "files keep their original encoding when saved");
+
+            File.Delete(textFile);
+            fileNote.Content = "text after the file was deleted";
+            Assert(linked.Flush([fileNote]) is not null && fileNote.FilePath is null && !File.Exists(textFile), "a file deleted elsewhere is not recreated; the note is unlinked");
+            Console.WriteLine("PASS: notes opened from a file are saved back to that file");
+
+            // The whole flow through the real window, without ever showing it: open a file, edit it in the pane, save, reopen.
+            var flowFile = Path.Combine(dataDirectory, "from-explorer.txt");
+            File.WriteAllText(flowFile, "original text\r\nsecond line");
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+            var window = new MainWindow { StartupFiles = [flowFile] };
+            var nonPublic = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            Pump((Task)typeof(MainWindow).GetMethod("LoadAsync", nonPublic)!.Invoke(window, null)!);
+            var panes = (List<Scrawl.Controls.NotePane>)typeof(MainWindow).GetField("_panes", nonPublic)!.GetValue(window)!;
+            Assert(panes.Count == 1 && panes[0].Note?.FilePath == Path.GetFullPath(flowFile), "opening a file shows it in a pane, linked to the file");
+            panes[0].Editor.Text = "edited in Scrawl";
+            Pump((Task)typeof(MainWindow).GetMethod("SaveAsync", nonPublic)!.Invoke(window, null)!);
+            Assert(File.ReadAllText(flowFile) == "edited in Scrawl", "typing in the pane is saved to the file by auto-save");
+            File.WriteAllText(flowFile, "changed by another program");
+            Pump((Task)typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!.Invoke(window, [new[] { flowFile }])!);
+            Assert(panes.Count == 1 && panes[0].Editor.Text == "changed by another program", "reopening the file shows its current text instead of an old copy");
+            Console.WriteLine("PASS: open a file, edit it, auto-save and reopen all work through the window");
         }
         finally
         {
             if (Directory.Exists(dataDirectory)) Directory.Delete(dataDirectory, recursive: true);
         }
+    }
+
+    /// <summary>Waits for a UI-bound task while keeping the dispatcher running.</summary>
+    private static void Pump(Task task)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (!task.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Thread.Sleep(5);
+        }
+        if (!task.IsCompleted) throw new InvalidOperationException("FAIL: the operation did not finish");
+        task.GetAwaiter().GetResult();
     }
 
     private static void Assert(bool condition, string description)

@@ -33,9 +33,9 @@ It is a single ~1 MB executable. No installer, no account, no telemetry, no netw
 - **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom
 - **Settings**: theme, font size, word wrap, line numbers, what new notes start as, desktop shortcut and text file handling
-- **Opens text files**: set Scrawl up for `.txt` in Settings and a double-click opens the file as a note. Only one Scrawl runs at a time
+- **Opens files like a notepad**: open a file (`Ctrl+O`, or double-click a `.txt` once Scrawl is set up for text files in Settings) and every edit is saved back to that file automatically, in its own encoding and line endings. Only one Scrawl runs at a time
 - Rounded window with macOS style buttons, a notes list that slides away (`Ctrl+B`), search, pinning, automatic saving
-- Import and export `.txt`, `.md` and code files, or export every note to a folder at once
+- Export notes as `.txt`, `.md` or any extension, or export every note to a folder at once
 
 ## Screenshots
 
@@ -94,7 +94,7 @@ Requires Windows 10 or 11.
 | Key | Action |
 | --- | --- |
 | `Ctrl+N` | New note |
-| `Ctrl+O` | Import files |
+| `Ctrl+O` | Open files (edits are saved back to the file) |
 | `Ctrl+S` | Save now |
 | `Ctrl+Shift+S` | Export as `.txt` (choose a location) |
 | `Ctrl+F` | Search notes |

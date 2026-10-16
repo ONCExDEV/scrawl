@@ -81,6 +81,8 @@
                                                            Visibility="{Binding IsPinned, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock DockPanel.Dock="Right" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="6,2,0,0"
                                                            Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock DockPanel.Dock="Right" Text="&#xE71B;" FontFamily="{StaticResource Icons}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="6,2,0,0" ToolTip="Linked to a file"
+                                                           Visibility="{Binding IsLinked, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                             </DockPanel>
                                             <DockPanel Margin="0,3,0,0">
@@ -92,8 +94,8 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                             <DockPanel Grid.Row="3" Margin="16,8,16,12">
-                                <Button DockPanel.Dock="Right" Click="Import_Click" ToolTip="Import files (Ctrl+O)" FontSize="11.5" Padding="10,4">
-                                    <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE898;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0"/><TextBlock Text="Import"/></StackPanel>
+                                <Button DockPanel.Dock="Right" Click="Import_Click" ToolTip="Open files (Ctrl+O)" FontSize="11.5" Padding="10,4">
+                                    <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE898;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0"/><TextBlock Text="Open"/></StackPanel>
                                 </Button>
                                 <TextBlock x:Name="NotesCount" FontSize="11.5" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
                             </DockPanel>
@@ -140,7 +142,7 @@
                             <TextBlock Text="Everything stays on this device." Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Button Style="{StaticResource AccentButton}" Click="NewNote_Click" HorizontalAlignment="Center" Content="New note"/>
                             <TextBlock Foreground="{DynamicResource Muted}" FontSize="12" HorizontalAlignment="Center" Margin="0,22,0,0" TextAlignment="Center"
-                                       Text="Ctrl+N new  ·  Ctrl+O import  ·  Ctrl+F search"/>
+                                       Text="Ctrl+N new  ·  Ctrl+O open file  ·  Ctrl+F search"/>
                         </StackPanel>
                     </Grid>
                 </Grid>

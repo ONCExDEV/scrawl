@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
     };
 
     private readonly NoteStore _store = new();
+    private readonly LinkedFiles _files = new();
     private readonly Settings _settings = Settings.Load();
     private readonly ObservableCollection<Note> _notes = [];
     private readonly List<NotePane> _panes = [];
@@ -60,7 +62,7 @@ public partial class MainWindow : Window
         {
             _saveTimer.Stop();
             _settings.Save();
-            if (_notesView is not null) _store.Save(_notes.ToList());
+            if (_notesView is not null) { _store.Save(_notes.ToList()); _files.Flush(_notes); }
         };
     }
 
@@ -86,6 +88,7 @@ public partial class MainWindow : Window
         {
             var firstRun = !_store.Exists;
             foreach (var note in await _store.LoadAsync()) Add(note);
+            _files.Adopt(_notes);
             if (firstRun) Add(WelcomeNote());
             _notesView = CollectionViewSource.GetDefaultView(_notes);
             _notesView.Filter = FilterNote;
@@ -151,7 +154,8 @@ public partial class MainWindow : Window
         try
         {
             await _store.SaveAsync(_notes.ToList());
-            SavedLabel.Text = "Saved";
+            var problem = _files.Flush(_notes);
+            SavedLabel.Text = problem ?? (ActiveNote?.IsLinked == true ? "Saved to file" : "Saved");
         }
         catch (Exception ex)
         {
@@ -414,7 +418,7 @@ public partial class MainWindow : Window
         if (note is null)
         {
             entries.Add(new("New note", "Ctrl+N", NewNote));
-            entries.Add(new("Import…", "Ctrl+O", () => _ = ImportAsync()));
+            entries.Add(new("Open file…", "Ctrl+O", () => _ = ImportAsync()));
             entries.Add(new(null));
             entries.Add(new("Export all notes to folder…", null, ExportAll));
         }
@@ -571,8 +575,14 @@ public partial class MainWindow : Window
 
     private List<Entry> LockEntries(Note note)
     {
-        if (!note.IsLocked) return [new("Lock with password…", null, () => _ = LockNoteAsync(note))];
         var entries = new List<Entry>();
+        if (note.FilePath is not null)
+        {
+            entries.Add(new("Show file in folder", null, () => Process.Start("explorer.exe", $"/select,\"{note.FilePath}\"")));
+            entries.Add(new("Unlink from file", null, () => { _files.Untrack(note); note.FilePath = null; QueueSave(); }));
+            entries.Add(new(null));
+        }
+        if (!note.IsLocked) { entries.Add(new("Lock with password…", null, () => _ = LockNoteAsync(note))); return entries; }
         if (note.IsUnlocked) entries.Add(new("Lock now", null, () => RelockNote(note)));
         else entries.Add(new("Unlock…", null, () => OpenNote(note)));
         entries.Add(new("Remove password…", null, () => _ = RemovePasswordAsync(note)));
@@ -588,6 +598,12 @@ public partial class MainWindow : Window
 
     private async Task LockNoteAsync(Note note)
     {
+        if (note.IsLinked)
+        {
+            if (!await ConfirmAsync("Unlink from file?", $"“{note.Title}” follows a file on disk, and that file is plain text. Locking unlinks the note from the file. The file stays as it is.", "Unlink and continue")) return;
+            _files.Untrack(note);
+            note.FilePath = null;
+        }
         var password = await PromptPasswordAsync("Lock note", $"Choose a password for “{note.Title}”. You'll need it to open or delete the note. If you forget it, the note can't be recovered.", "Lock note", confirm: true);
         if (password is null) return;
         NoteLock.Lock(note, password);
@@ -769,7 +785,7 @@ public partial class MainWindow : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Import files",
+            Title = "Open files",
             Filter = "Text and code|*.txt;*.md;*.cs;*.js;*.ts;*.py;*.java;*.cpp;*.c;*.go;*.rs;*.json;*.html;*.css;*.sql;*.sh;*.ps1|All files (*.*)|*.*",
             Multiselect = true
         };
@@ -777,6 +793,10 @@ public partial class MainWindow : Window
         await ImportPathsAsync(dialog.FileNames);
     }
 
+    /// <summary>
+    /// Opens files like a notepad does: the note stays linked to the file, so every edit is saved back to it.
+    /// Opening a file that is already open shows that note again (re-read from disk).
+    /// </summary>
     private async Task ImportPathsAsync(IEnumerable<string> paths)
     {
         try
@@ -785,14 +805,24 @@ public partial class MainWindow : Window
             foreach (var path in paths)
             {
                 if (!File.Exists(path)) continue;
-                var extension = Path.GetExtension(path).ToLowerInvariant();
+                var full = Path.GetFullPath(path);
+                var snapshot = LinkedFiles.Read(full);
+                var existing = _notes.FirstOrDefault(n => string.Equals(n.FilePath, full, StringComparison.OrdinalIgnoreCase) && Readable(n));
+                if (existing is not null)
+                {
+                    if (existing.Content != snapshot.Text) { existing.Content = snapshot.Text; RefreshPanesFor(existing); }
+                    _files.Track(existing, snapshot);
+                    last = existing;
+                    continue;
+                }
+                var extension = Path.GetExtension(full).ToLowerInvariant();
                 var language = extension switch
                 {
                     ".c" or ".h" or ".hpp" => "cpp", ".ps1" => "shell", ".htm" or ".xml" => "html", ".md" or ".log" => "text",
                     _ => Extensions.FirstOrDefault(p => p.Value == extension).Key ?? "text"
                 };
-                var content = (await File.ReadAllTextAsync(path)).Replace("\r\n", "\n");
-                last = new Note { Title = Path.GetFileNameWithoutExtension(path), Content = content, Language = language, UpdatedAt = DateTime.Now };
+                last = new Note { Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, FilePath = full };
+                _files.Track(last, snapshot);
                 Add(last);
             }
             RefreshNotesView();
@@ -801,7 +831,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await Info("Import failed", $"The file couldn't be imported.\n\n{ex.Message}");
+            await Info("Couldn't open the file", $"The file couldn't be opened.\n\n{ex.Message}");
         }
     }
 
@@ -822,7 +852,7 @@ public partial class MainWindow : Window
         {
             if (await PromptPasswordAsync("Delete locked note?", $"Enter the password of “{note.Title}” to delete it. This can't be undone.", "Delete", confirm: false, check: pw => NoteLock.Verify(note, pw), danger: true) is null) return;
         }
-        else if (!await ConfirmAsync("Delete note?", $"“{note.Title}” will be deleted from this device. This can't be undone.", "Delete", danger: true)) return;
+        else if (!await ConfirmAsync("Delete note?", $"“{note.Title}” will be deleted from this device." + (note.IsLinked ? " The file on disk is not touched." : " This can't be undone."), "Delete", danger: true)) return;
         note.PropertyChanged -= Note_PropertyChanged;
         foreach (var pane in _panes.Where(p => p.Note == note).ToList()) RemovePane(pane);
         _notes.Remove(note);
@@ -1018,7 +1048,7 @@ public partial class MainWindow : Window
     private List<Entry> FileMenu() =>
     [
         new("New note", "Ctrl+N", NewNote),
-        new("Import…", "Ctrl+O", () => _ = ImportAsync()),
+        new("Open file…", "Ctrl+O", () => _ = ImportAsync()),
         new(null),
         new("Save", "Ctrl+S", () => { _saveTimer.Stop(); _ = SaveAsync(); }),
         new("Export as .txt…", "Ctrl+Shift+S", () => ExportActive(".txt")),

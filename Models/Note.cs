@@ -11,6 +11,7 @@ public sealed class Note : INotifyPropertyChanged
     private bool _isPinned;
     private string _language = "text";
     private string? _lockSalt;
+    private string? _filePath;
     private byte[]? _key;
     private DateTime _updatedAt = DateTime.Now;
 
@@ -23,6 +24,11 @@ public sealed class Note : INotifyPropertyChanged
 
     /// <summary>Salt of the password; null when the note has no password.</summary>
     public string? LockSalt { get => _lockSalt; set { if (Set(ref _lockSalt, value)) { Raise(nameof(IsLocked)); Raise(nameof(Snippet)); } } }
+
+    /// <summary>The file this note was opened from. Saving the note also saves this file.</summary>
+    public string? FilePath { get => _filePath; set { if (Set(ref _filePath, value)) Raise(nameof(IsLinked)); } }
+
+    [JsonIgnore] public bool IsLinked => _filePath is not null;
 
     /// <summary>The encrypted text of a password protected note.</summary>
     public string? Vault { get; set; }
