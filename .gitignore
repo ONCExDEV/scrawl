@@ -13,3 +13,6 @@ publish/
 
 # Built executables live in GitHub releases, not in the repo
 *.exe
+
+# Left behind when a test run is interrupted
+.scrawl-smoke-*/
