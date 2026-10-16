@@ -14,6 +14,21 @@ public static class SystemIntegration
     /// <summary>Text files keep Windows' normal text document icon instead of the Scrawl logo.</summary>
     private const string TextFileIcon = @"%SystemRoot%\system32\imageres.dll,-102";
 
+    /// <summary>The name Windows gives text files ("Text Document", localised), so they are not listed as "TXT File".</summary>
+    private const string TextTypeName = @"@%SystemRoot%\system32\notepad.exe,-469";
+
+    /// <summary>
+    /// Windows also creates its own "Applications\Scrawl.exe" entry when someone picks Scrawl in "Open with".
+    /// Without an icon there, Explorer shows the Scrawl logo on every text file, so give it the text file look too.
+    /// </summary>
+    private static void StyleApplicationEntry(string exeName)
+    {
+        using var app = Registry.CurrentUser.CreateSubKey($@"Software\Classes\Applications\{exeName}");
+        app.SetValue("FriendlyTypeName", TextTypeName, RegistryValueKind.ExpandString);
+        using var icon = app.CreateSubKey("DefaultIcon");
+        icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
+    }
+
     private static string ExePath
     {
         get
@@ -51,6 +66,7 @@ public static class SystemIntegration
         using (var progId = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{ProgId}"))
         {
             progId.SetValue(string.Empty, "Scrawl note");
+            progId.SetValue("FriendlyTypeName", TextTypeName, RegistryValueKind.ExpandString);
             using var icon = progId.CreateSubKey("DefaultIcon");
             icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
             using var command = progId.CreateSubKey(@"shell\open\command");
@@ -74,6 +90,7 @@ public static class SystemIntegration
             openWith.SetValue(ProgId, Array.Empty<byte>(), RegistryValueKind.None);
         }
 
+        StyleApplicationEntry(Path.GetFileName(exe));
         SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
         Process.Start(new ProcessStartInfo("ms-settings:defaultapps") { UseShellExecute = true });
     }
@@ -86,12 +103,34 @@ public static class SystemIntegration
     {
         try
         {
-            using var progId = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{ProgId}", writable: true);
-            if (progId is null) return;
-            using var icon = progId.CreateSubKey("DefaultIcon");
-            if (icon.GetValue(string.Empty, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string == TextFileIcon) return;
-            icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
-            SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+            var changed = false;
+            using (var progId = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{ProgId}", writable: true))
+            {
+                if (progId is not null)
+                {
+                    using var icon = progId.CreateSubKey("DefaultIcon");
+                    if (icon.GetValue(string.Empty, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string != TextFileIcon)
+                    {
+                        icon.SetValue(string.Empty, TextFileIcon, RegistryValueKind.ExpandString);
+                        progId.SetValue("FriendlyTypeName", TextTypeName, RegistryValueKind.ExpandString);
+                        changed = true;
+                    }
+                }
+            }
+
+            // Entries Windows created for "Open with Scrawl" (one per exe name that was used, such as Scrawl.exe).
+            using (var applications = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Applications"))
+            {
+                foreach (var name in applications?.GetSubKeyNames().Where(n => n.StartsWith("Scrawl", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) ?? [])
+                {
+                    using var icon = applications!.OpenSubKey($@"{name}\DefaultIcon");
+                    if (icon?.GetValue(string.Empty, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string == TextFileIcon) continue;
+                    StyleApplicationEntry(name);
+                    changed = true;
+                }
+            }
+
+            if (changed) SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
