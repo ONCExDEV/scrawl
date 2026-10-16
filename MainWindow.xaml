@@ -43,7 +43,7 @@
                             <Button Click="Find_Click" ToolTip="Search notes (Ctrl+F)"><TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0" WindowChrome.IsHitTestVisibleInChrome="True">
-                            <Button x:Name="UpdateButton" Click="Update_Click" Padding="10,6" Margin="0,0,4,0" Visibility="Collapsed">
+                            <Button x:Name="UpdateButton" Style="{StaticResource AccentButton}" Click="Update_Click" Padding="12,6" Margin="0,0,8,0" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE895;" FontFamily="{StaticResource Icons}" FontSize="13" Margin="0,1,6,0"/><TextBlock Text="Update" FontSize="12.5"/></StackPanel>
                             </Button>
                             <Button Click="Settings_Click" ToolTip="Settings (Ctrl+,)"><TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="15"/></Button>

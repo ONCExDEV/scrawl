@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>Scrawl</AssemblyName>
     <RootNamespace>Scrawl</RootNamespace>
-    <Version>1.0.8</Version>
+    <Version>1.0.9</Version>
     <ApplicationIcon>Assets\scrawl.ico</ApplicationIcon>
     <!-- Run on newer .NET too (9, 10, ...) when .NET 8 itself is not installed -->
     <RollForward>LatestMajor</RollForward>
