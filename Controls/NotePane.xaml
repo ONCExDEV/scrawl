@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ae="http://icsharpcode.net/sharpdevelop/avalonedit"
+             xmlns:local="clr-namespace:Scrawl.Controls"
              PreviewMouseDown="Pane_PreviewMouseDown">
     <Border Background="{DynamicResource Bg}">
         <Grid>
@@ -25,9 +26,15 @@
                     <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center"/>
                     <TextBlock Text="This note is locked" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,4"/>
                     <TextBlock x:Name="UnlockHint" Text="Enter the password to read it." Foreground="{DynamicResource Muted}" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                    <PasswordBox x:Name="UnlockBox" KeyDown="UnlockBox_KeyDown" PasswordChanged="UnlockBox_PasswordChanged"/>
+                    <StackPanel x:Name="PasswordArea">
+                    <PasswordBox x:Name="UnlockBox" KeyDown="UnlockBox_KeyDown"/>
                     <TextBlock x:Name="UnlockError" Foreground="#E5484D" FontSize="12" Margin="2,6,0,0" Visibility="Collapsed" Text="Wrong password"/>
                     <Button Style="{StaticResource AccentButton}" Content="Unlock" Click="Unlock_Click" Margin="0,12,0,0" HorizontalAlignment="Stretch"/>
+                    </StackPanel>
+                    <StackPanel x:Name="PinArea" Visibility="Collapsed">
+                        <local:PinPad x:Name="UnlockPad" HorizontalAlignment="Center" Completed="UnlockPad_Completed"/>
+                        <TextBlock x:Name="PinError" Foreground="#E5484D" FontSize="12" HorizontalAlignment="Center" Margin="0,4,0,0" Visibility="Collapsed" Text="Wrong PIN"/>
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Grid>

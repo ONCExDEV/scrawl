@@ -27,7 +27,7 @@ It is a single ~1 MB executable. No installer, no account, no telemetry. Scrawl 
 - **Notepad notes**: plain text only. No colors, no line highlight, no auto-indent. Enter works like a classic notepad
 - **Code notes**: syntax colors for C#, JavaScript, TypeScript, Python, Java, C/C++, Go, Rust, JSON, HTML/XML, CSS, SQL and shell. Paste code into a notepad note and the language is detected for you
 - **Up to four notes side by side**: drag a note from the list onto the editor and drop it on a tile. Drag the dividers to resize
-- **Password or PIN locked notes**: choose a password, or a 4 or 6 digit PIN (digits 0 to 9, typed twice). Locked notes are encrypted on disk (AES-256-GCM) and blurred until you enter the password or PIN. A PIN unlocks as soon as the last digit is typed. Deleting a locked note asks for it too
+- **Password or PIN locked notes**: choose a password, or a 4 or 6 digit PIN entered on a number pad (type it twice). Locked notes are encrypted on disk (AES-256-GCM) and blurred until you enter the password or PIN. The number pad also works with your keyboard, and a PIN unlocks as soon as the last digit is in. Deleting a locked note asks for it too
 - **Arrange your notes**: drag a note up or down in the list to put it where you want it. Pinned notes always stay on top, and editing a note no longer moves it
 - **Automatic saving can be turned off** in Settings: then notes are only saved when you press `Ctrl+S`, and closing with unsaved changes asks first
 - **One-click download**: saves the note as `.txt` in your Downloads folder and keeps the note linked to that file, so opening the file later shows the same note and downloading again updates it. Hover the button to export with any extension you type

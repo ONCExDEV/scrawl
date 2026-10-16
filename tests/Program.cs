@@ -218,7 +218,6 @@ internal static class Program
             NoteLock.Remove(pinLoaded);
             Assert(pinLoaded.PinLength == 0 && !pinLoaded.IsLocked, "removing the lock forgets the PIN length");
             Assert(new Note { PinLength = 5 }.PinLength == 0 && new Note { PinLength = 4 }.PinLength == 4 && new Note { PinLength = 6 }.PinLength == 6, "a PIN has 4 or 6 digits, nothing else");
-            Assert(PinInput.IsDigits("0123456789") && !PinInput.IsDigits("12a4") && !PinInput.IsDigits("") && !PinInput.IsDigits("12 4") && !PinInput.IsDigits("\u0661\u0662\u0663"), "a PIN is made of the digits 0 to 9 only");
             Pump(store.SaveAsync([new Note { Title = "plain", PinLength = 4 }]));
             Assert(Await(store.LoadAsync())[0].PinLength == 0, "a note without a lock never keeps a PIN length");
             Console.WriteLine("PASS: notes can be locked with a 4 or 6 digit PIN");
@@ -228,20 +227,49 @@ internal static class Program
             addNote.Invoke(window, [lockTarget]);
             var lockTask = (Task)typeof(MainWindow).GetMethod("LockNoteAsync", nonPublic)!.Invoke(window, [lockTarget])!;
             Assert(window.DialogLayer.Visibility == System.Windows.Visibility.Visible && window.DialogKind.Visibility == System.Windows.Visibility.Visible, "the lock dialog lets you choose between a password and a PIN");
+            void Digits(string digits) { foreach (var digit in digits) window.DialogPad.Press(digit); Pump(Task.Delay(60)); }
             window.KindPin4.IsChecked = true;
             window.KindPin4.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
-            Assert(window.DialogPw1.MaxLength == 4 && window.DialogPw2.MaxLength == 4, "a 4-digit PIN limits both boxes to 4 characters");
-            window.DialogPw1.Password = "12a4"; window.DialogPw2.Password = "12a4";
-            Click("DialogOk_Click");
-            Assert(window.DialogError.Visibility == System.Windows.Visibility.Visible && window.DialogError.Text.Contains("4 digits"), "letters are refused for a PIN");
-            window.DialogPw1.Password = "1234"; window.DialogPw2.Password = "1235";
-            Click("DialogOk_Click");
-            Assert(window.DialogError.Text.Contains("don't match"), "the PIN has to be typed twice the same");
-            window.DialogPw2.Password = "1234";
-            Click("DialogOk_Click");
+            Assert(window.DialogPad.Visibility == System.Windows.Visibility.Visible && window.DialogPw1.Visibility == System.Windows.Visibility.Collapsed && window.DialogOk.Visibility == System.Windows.Visibility.Collapsed && window.DialogPad.Length == 4,
+                "choosing a 4-digit PIN shows a number pad instead of the password boxes");
+            window.DialogPad.Press('x');
+            window.DialogPad.Press('7');
+            Assert(window.DialogPad.Entered == "7", "the pad takes digits only");
+            window.DialogPad.Backspace();
+            Assert(window.DialogPad.Entered == "", "the delete key removes the last digit");
+            Digits("1234");
+            Assert(window.DialogPadHint.Text == "Type the PIN again" && window.DialogPad.Entered == "", "after the first entry the pad asks for the PIN again");
+            Digits("1235");
+            Assert(window.DialogError.Visibility == System.Windows.Visibility.Visible && window.DialogError.Text.Contains("don't match") && window.DialogLayer.Visibility == System.Windows.Visibility.Visible, "two different PINs are refused");
+            Pump(Task.Delay(700));
+            Assert(window.DialogPad.Entered == "" && window.DialogPadHint.Text.StartsWith("Enter a 4-digit"), "after a mistake the pad starts over");
+            Digits("1234");
+            Digits("1234");
             Pump(lockTask);
             Assert(lockTarget.IsLocked && lockTarget.PinLength == 4 && NoteLock.Verify(lockTarget, "1234") && !NoteLock.Verify(lockTarget, "4321"), "the note is locked with the chosen PIN");
-            Assert(window.DialogKind.Visibility == System.Windows.Visibility.Collapsed && window.DialogPw1.MaxLength == 0, "the dialog goes back to normal afterwards");
+            Assert(window.DialogKind.Visibility == System.Windows.Visibility.Collapsed && window.DialogPad.Visibility == System.Windows.Visibility.Collapsed, "the dialog goes back to normal afterwards");
+
+            // Opening a PIN locked note shows the number pad; a wrong PIN shakes and refuses, the right one unlocks as soon as the last digit is in.
+            typeof(MainWindow).GetMethod("OpenNote", nonPublic)!.Invoke(window, [lockTarget]);
+            var pinPane = ((List<Scrawl.Controls.NotePane>)typeof(MainWindow).GetField("_panes", nonPublic)!.GetValue(window)!).First(p => p.Note == lockTarget);
+            Assert(pinPane.IsShowingLock && pinPane.PinArea.Visibility == System.Windows.Visibility.Visible && pinPane.PasswordArea.Visibility == System.Windows.Visibility.Collapsed && pinPane.UnlockPad.Length == 4, "a PIN locked note shows the number pad on its lock screen");
+            foreach (var digit in "4321") pinPane.UnlockPad.Press(digit);
+            Pump(Task.Delay(80));
+            Assert(pinPane.PinError.Visibility == System.Windows.Visibility.Visible && !lockTarget.IsUnlocked, "a wrong PIN is refused");
+            Pump(Task.Delay(700));
+            foreach (var digit in "1234") pinPane.UnlockPad.Press(digit);
+            Pump(Task.Delay(80));
+            Assert(lockTarget.IsUnlocked && lockTarget.Content == "behind a pin" && !pinPane.IsShowingLock, "the right PIN unlocks the note");
+
+            // Deleting a PIN locked note asks for the PIN on a number pad too.
+            var deleteTask = (Task)typeof(MainWindow).GetMethod("DeleteNoteAsync", nonPublic)!.Invoke(window, [lockTarget])!;
+            Assert(window.DialogLayer.Visibility == System.Windows.Visibility.Visible && window.DialogPad.Visibility == System.Windows.Visibility.Visible && window.DialogPadHint.Text == "Enter your 4-digit PIN", "deleting a PIN locked note asks for the PIN on the pad");
+            Digits("0000");
+            Assert(window.DialogError.Text == "Wrong PIN." && allNotes.Contains(lockTarget), "a wrong PIN does not delete the note");
+            Pump(Task.Delay(700));
+            Digits("1234");
+            Pump(deleteTask);
+            Assert(!allNotes.Contains(lockTarget), "the right PIN deletes the note");
             Console.WriteLine("PASS: the lock dialog creates PIN locked notes");
 
             // Arranging the notes list: dragging gives a note a new order, pinned notes stay on top, everything is remembered.

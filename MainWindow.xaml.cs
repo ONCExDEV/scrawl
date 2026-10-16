@@ -1346,6 +1346,12 @@ public partial class MainWindow : Window
 
     // ───────────── In-app dialog ─────────────
 
+    private bool _dialogOkVisible = true;
+    private int _dialogPasswordBoxes;
+    private string? _dialogPinValue;
+    private string? _pinFirst;
+    private bool _pinCreating;
+
     private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false, bool kindChoice = false, int pinLength = 0)
     {
         _dialog?.TrySetResult(false);
@@ -1354,7 +1360,6 @@ public partial class MainWindow : Window
         DialogTitle.Text = title;
         DialogText.Text = message;
         DialogOk.Content = ok;
-        DialogOk.Visibility = okVisible ? Visibility.Visible : Visibility.Collapsed;
         DialogCancel.Content = cancelText;
         _dialogRequiresChoice = requireChoice;
         DialogOk.Background = danger ? new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D)) : Themes.Get("Accent");
@@ -1363,28 +1368,51 @@ public partial class MainWindow : Window
         DialogError.Visibility = Visibility.Collapsed;
         _dialogBaseText = message;
         _dialogPin = kindChoice ? 0 : pinLength;
-        PinInput.Configure(DialogPw1, _dialogPin);
-        PinInput.Configure(DialogPw2, _dialogPin);
+        _dialogPinValue = null;
+        _pinFirst = null;
+        _pinCreating = kindChoice;
+        _dialogOkVisible = okVisible;
+        _dialogPasswordBoxes = passwordBoxes;
         DialogKind.Visibility = kindChoice ? Visibility.Visible : Visibility.Collapsed;
         if (kindChoice) KindPassword.IsChecked = true;
         DialogPw1.Clear();
         DialogPw2.Clear();
-        DialogPw1.Visibility = passwordBoxes >= 1 ? Visibility.Visible : Visibility.Collapsed;
-        DialogPw2.Visibility = passwordBoxes >= 2 ? Visibility.Visible : Visibility.Collapsed;
+        ShowDialogInputs();
         DialogLayer.Visibility = Visibility.Visible;
-        if (passwordBoxes > 0) Dispatcher.BeginInvoke(() => DialogPw1.Focus(), DispatcherPriority.Input);
+        FocusDialogInput();
         return _dialog.Task;
     }
 
+    /// <summary>Shows what the dialog asks for: password boxes, or the PIN pad when a PIN is wanted.</summary>
+    private void ShowDialogInputs()
+    {
+        var pin = _dialogPin > 0;
+        DialogPw1.Visibility = !pin && _dialogPasswordBoxes >= 1 ? Visibility.Visible : Visibility.Collapsed;
+        DialogPw2.Visibility = !pin && _dialogPasswordBoxes >= 2 ? Visibility.Visible : Visibility.Collapsed;
+        DialogPad.Visibility = DialogPadHint.Visibility = pin ? Visibility.Visible : Visibility.Collapsed;
+        // A PIN needs no OK button: the dialog continues by itself when the last digit is typed.
+        DialogOk.Visibility = pin || !_dialogOkVisible ? Visibility.Collapsed : Visibility.Visible;
+        if (!pin) return;
+        DialogPad.Length = _dialogPin;
+        DialogPad.Reset();
+        DialogPadHint.Text = _pinCreating ? $"Enter a {_dialogPin}-digit PIN" : $"Enter your {_dialogPin}-digit PIN";
+    }
+
+    private void FocusDialogInput() => Dispatcher.BeginInvoke(() =>
+    {
+        if (_dialogPin > 0) DialogPad.FocusPad();
+        else if (_dialogPasswordBoxes > 0) DialogPw1.Focus();
+    }, DispatcherPriority.Input);
+
     private Task Info(string title, string message) => ConfirmAsync(title, message, "OK", showCancel: false);
 
-    /// <summary>Asks for a password inside the app. Returns null when cancelled.</summary>
+    /// <summary>Asks for a password (or PIN) inside the app. Returns null when cancelled.</summary>
     private async Task<string?> PromptPasswordAsync(string title, string message, string ok, bool confirm, Func<string, bool>? check = null, bool danger = false, int pinLength = 0)
     {
         string? result = null;
         var accepted = await ConfirmAsync(title, message + (confirm ? "\n\nType the password twice." : string.Empty), ok, danger, validate: () =>
         {
-            var password = DialogPw1.Password;
+            var password = pinLength > 0 ? _dialogPinValue ?? string.Empty : DialogPw1.Password;
             if (password.Length == 0) return pinLength > 0 ? "Enter the PIN." : "Enter a password.";
             if (confirm && password.Length < 4) return "Use at least 4 characters.";
             if (confirm && password != DialogPw2.Password) return "The two passwords don't match.";
@@ -1395,24 +1423,23 @@ public partial class MainWindow : Window
         return accepted ? result : null;
     }
 
-    /// <summary>Asks for a new password or a 4 or 6 digit PIN (typed twice). Returns null when cancelled.</summary>
+    /// <summary>Asks for a new password, or a 4 or 6 digit PIN on a number pad (typed twice). Returns null when cancelled.</summary>
     private async Task<(string Secret, int PinLength)?> PromptNewLockAsync(string title, string message, string ok)
     {
         (string, int)? result = null;
         var accepted = await ConfirmAsync(title, message + "\n\nType it twice.", ok, validate: () =>
         {
-            var secret = DialogPw1.Password;
             if (_dialogPin > 0)
             {
-                if (secret.Length != _dialogPin || !PinInput.IsDigits(secret)) return $"Enter exactly {_dialogPin} digits (0 to 9).";
+                if (_dialogPinValue is null) return "Enter the PIN.";
+                result = (_dialogPinValue, _dialogPin);
+                return null;
             }
-            else
-            {
-                if (secret.Length == 0) return "Enter a password.";
-                if (secret.Length < 4) return "Use at least 4 characters.";
-            }
-            if (secret != DialogPw2.Password) return _dialogPin > 0 ? "The two PINs don't match." : "The two passwords don't match.";
-            result = (secret, _dialogPin);
+            var secret = DialogPw1.Password;
+            if (secret.Length == 0) return "Enter a password.";
+            if (secret.Length < 4) return "Use at least 4 characters.";
+            if (secret != DialogPw2.Password) return "The two passwords don't match.";
+            result = (secret, 0);
             return null;
         }, passwordBoxes: 2, kindChoice: true);
         return accepted ? result : null;
@@ -1422,13 +1449,48 @@ public partial class MainWindow : Window
     private void DialogKind_Click(object sender, RoutedEventArgs e)
     {
         _dialogPin = int.Parse((string)((RadioButton)sender).Tag);
-        PinInput.Configure(DialogPw1, _dialogPin);
-        PinInput.Configure(DialogPw2, _dialogPin);
+        _dialogPinValue = null;
+        _pinFirst = null;
         DialogPw1.Clear();
         DialogPw2.Clear();
         DialogError.Visibility = Visibility.Collapsed;
-        DialogText.Text = _dialogBaseText + (_dialogPin > 0 ? $"\n\nA {_dialogPin}-digit PIN is quick to type, but far easier to guess than a password." : string.Empty);
-        DialogPw1.Focus();
+        DialogText.Text = _dialogPin > 0
+            ? _dialogBaseText.Replace("\n\nType it twice.", string.Empty) + $"\n\nA PIN is quick to type, but far easier to guess than a password."
+            : _dialogBaseText;
+        ShowDialogInputs();
+        FocusDialogInput();
+    }
+
+    /// <summary>The PIN pad of a dialog is full. Creating a PIN asks for it twice; asking for an existing one checks it right away.</summary>
+    private void DialogPad_Completed(PinPad pad, string pin)
+    {
+        if (_pinCreating)
+        {
+            if (_pinFirst is null)
+            {
+                _pinFirst = pin;
+                DialogPadHint.Text = "Type the PIN again";
+                DialogError.Visibility = Visibility.Collapsed;
+                pad.Reset();
+                return;
+            }
+            if (pin != _pinFirst)
+            {
+                _pinFirst = null;
+                DialogPadHint.Text = $"Enter a {_dialogPin}-digit PIN";
+                DialogError.Text = "The two PINs don't match. Try again.";
+                DialogError.Visibility = Visibility.Visible;
+                pad.ShowError();
+                return;
+            }
+        }
+        _dialogPinValue = pin;
+        AcceptDialog();
+        if (DialogLayer.Visibility == Visibility.Visible)
+        {
+            _dialogPinValue = null;
+            pad.ShowError();   // the check said no: the error text is already shown
+        }
     }
 
     private void AcceptDialog()
@@ -1446,10 +1508,13 @@ public partial class MainWindow : Window
     {
         DialogLayer.Visibility = Visibility.Collapsed;
         DialogKind.Visibility = Visibility.Collapsed;
-        PinInput.Configure(DialogPw1, 0);
-        PinInput.Configure(DialogPw2, 0);
+        DialogPad.Visibility = DialogPadHint.Visibility = Visibility.Collapsed;
+        DialogPad.Reset();
         DialogPw1.Clear();
         DialogPw2.Clear();
+        _dialogPin = 0;
+        _dialogPinValue = null;
+        _pinFirst = null;
         _dialogValidator = null;
         _dialogRequiresChoice = false;
         _dialog?.TrySetResult(result);

@@ -86,12 +86,18 @@ public partial class NotePane : UserControl
         Editor.IsReadOnly = true;
         TitleBox.IsReadOnly = true;
         var pin = Note?.PinLength ?? 0;
-        PinInput.Configure(UnlockBox, pin);
+        PasswordArea.Visibility = pin > 0 ? Visibility.Collapsed : Visibility.Visible;
+        PinArea.Visibility = pin > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (pin > 0)
+        {
+            UnlockPad.Length = pin;
+            UnlockPad.Reset();
+        }
         UnlockBox.Password = string.Empty;
         UnlockHint.Text = pin > 0 ? "Enter the PIN to read it." : "Enter the password to read it.";
-        UnlockError.Text = pin > 0 ? "Wrong PIN" : "Wrong password";
         UnlockError.Visibility = Visibility.Collapsed;
-        Dispatcher.BeginInvoke(() => UnlockBox.Focus(), System.Windows.Threading.DispatcherPriority.Input);
+        PinError.Visibility = Visibility.Collapsed;
+        Dispatcher.BeginInvoke(() => { if (pin > 0) UnlockPad.FocusPad(); else UnlockBox.Focus(); }, System.Windows.Threading.DispatcherPriority.Input);
     }
 
     private void HideLock()
@@ -102,26 +108,29 @@ public partial class NotePane : UserControl
         TitleBox.IsReadOnly = false;
     }
 
-    private void Unlock_Click(object sender, RoutedEventArgs e) => TryUnlock();
+    private void Unlock_Click(object sender, RoutedEventArgs e) => TryUnlock(UnlockBox.Password);
 
     /// <summary>A PIN unlocks as soon as its last digit is typed.</summary>
-    private void UnlockBox_PasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (Note is { PinLength: > 0 } note && UnlockBox.Password.Length == note.PinLength) TryUnlock();
-    }
+    private void UnlockPad_Completed(PinPad pad, string pin) => TryUnlock(pin);
 
     private void UnlockBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
-        TryUnlock();
+        TryUnlock(UnlockBox.Password);
         e.Handled = true;
     }
 
-    private void TryUnlock()
+    private void TryUnlock(string secret)
     {
         if (Note is null) return;
-        if (!NoteLock.TryUnlock(Note, UnlockBox.Password))
+        if (!NoteLock.TryUnlock(Note, secret))
         {
+            if (Note.PinLength > 0)
+            {
+                PinError.Visibility = Visibility.Visible;
+                UnlockPad.ShowError();
+                return;
+            }
             UnlockError.Visibility = Visibility.Visible;
             UnlockBox.Clear();
             UnlockBox.Focus();
