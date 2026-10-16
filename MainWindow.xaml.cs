@@ -1,12 +1,14 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -72,9 +74,34 @@ public partial class MainWindow : Window
     /// <summary>Called when a second launch hands over files to this window.</summary>
     public void BringToFrontAndOpen(List<string> files)
     {
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
+        BringToFront();
         if (files.Count > 0 && _notesView is not null) _ = ImportPathsAsync(files);
+    }
+
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint thisThread, uint otherThread, bool attach);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+
+    /// <summary>Restores the window if needed and puts it above every other window, including full-screen ones.</summary>
+    private void BringToFront()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        var handle = new WindowInteropHelper(this).Handle;
+        var foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+        var thisThread = GetCurrentThreadId();
+        // Sharing input with the current foreground window is what lets us take focus from it.
+        var attached = foregroundThread != thisThread && AttachThreadInput(thisThread, foregroundThread, true);
+        Show();
+        BringWindowToTop(handle);
+        SetForegroundWindow(handle);
+        if (attached) AttachThreadInput(thisThread, foregroundThread, false);
+        Activate();
+        Topmost = true;   // a short topmost flash guarantees it ends up above full-screen windows
+        Topmost = false;
+        Focus();
     }
 
     private TextEditor? Ed => _active?.Editor;

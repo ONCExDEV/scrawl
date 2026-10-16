@@ -33,7 +33,7 @@ It is a single ~1 MB executable. No installer, no account, no telemetry, no netw
 - **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom
 - **Settings**: theme, font size, word wrap, line numbers, what new notes start as, desktop shortcut and text file handling
-- **Opens files like a notepad**: open a file (`Ctrl+O`, or double-click a `.txt` once Scrawl is set up for text files in Settings) and every edit is saved back to that file automatically, in its own encoding and line endings. Only one Scrawl runs at a time
+- **Opens files like a notepad**: open a file (`Ctrl+O`, or double-click a `.txt` once Scrawl is set up for text files in Settings) and every edit is saved back to that file automatically, in its own encoding and line endings. Only one Scrawl runs at a time, and opening a file brings it to the front (restoring it if it was minimized)
 - Rounded window with macOS style buttons, a notes list that slides away (`Ctrl+B`), search, pinning, automatic saving
 - Export notes as `.txt`, `.md` or any extension, or export every note to a folder at once
 

@@ -1,5 +1,7 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 
 namespace Scrawl;
@@ -31,10 +33,21 @@ public partial class App : Application
         _ = Task.Run(() => ListenForFiles(window));
     }
 
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
+
     private static void SendToRunningInstance(string[] files)
     {
         try
         {
+            // This process was just started by the user (for example by opening a .txt file), so Windows lets it hand the
+            // right to come to the front over to the running Scrawl.
+            using var current = Process.GetCurrentProcess();
+            foreach (var other in Process.GetProcessesByName(current.ProcessName).Where(p => p.Id != current.Id))
+            {
+                AllowSetForegroundWindow(other.Id);
+                other.Dispose();
+            }
             using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
             client.Connect(2000);
             using var writer = new StreamWriter(client);
