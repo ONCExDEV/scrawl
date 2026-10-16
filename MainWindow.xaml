@@ -73,7 +73,7 @@
                                 <TextBox x:Name="SearchBox" Margin="32,0,10,0" VerticalContentAlignment="Center" FontSize="12.5" TextChanged="SearchBox_TextChanged"/>
                                 <TextBlock x:Name="SearchHint" Text="Search" IsHitTestVisible="False" FontSize="12.5" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="33,0,0,0"/>
                             </Grid>
-                            <ListBox x:Name="NotesList" Grid.Row="2" Background="Transparent" BorderThickness="0" Margin="8,0,10,0" SelectionChanged="NotesList_SelectionChanged"
+                            <ListBox x:Name="NotesList" Grid.Row="2" Background="Transparent" BorderThickness="0" Margin="8,0,10,0" SelectionChanged="NotesList_SelectionChanged" AllowDrop="True" DragOver="NotesList_DragOver" Drop="NotesList_Drop" DragLeave="NotesList_DragLeave"
                                      PreviewMouseLeftButtonDown="NotesList_PreviewMouseDown" PreviewMouseMove="NotesList_PreviewMouseMove" PreviewMouseRightButtonDown="NotesList_RightDown" PreviewMouseRightButtonUp="NotesList_RightClick"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled" Foreground="{DynamicResource Text}">
                                 <ListBox.ItemTemplate>
@@ -96,6 +96,8 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
+                            <!-- Shown while a note is dragged to a new place in the list -->
+                            <Border x:Name="ReorderLine" Grid.Row="2" Height="3" CornerRadius="1.5" VerticalAlignment="Top" HorizontalAlignment="Stretch" IsHitTestVisible="False" Visibility="Collapsed" Background="{DynamicResource Accent}"/>
                             <DockPanel Grid.Row="3" Margin="16,8,16,12">
                                 <Button DockPanel.Dock="Right" Click="Import_Click" ToolTip="Open files (Ctrl+O)" FontSize="11.5" Padding="10,4">
                                     <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE898;" FontFamily="{StaticResource Icons}" Margin="0,1,6,0"/><TextBlock Text="Open"/></StackPanel>
@@ -117,7 +119,15 @@
                                     <RadioButton x:Name="ModeCode" Style="{StaticResource Seg}" Content="Code" Click="Kind_Click" Tag="code" Margin="2,0,0,0" ToolTip="Syntax colors like VS Code"/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                    <Button x:Name="PinButton" Click="Pin_Click"><TextBlock x:Name="PinIcon" Text="&#xE718;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
+                                    <Button x:Name="PinButton" Click="Pin_Click"><Grid><TextBlock x:Name="PinIcon" Text="&#xE718;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                                        <!-- The pinned look: a filled pin drawn as a shape, so no part of it can be cut off -->
+                                        <Viewbox x:Name="PinFilledIcon" Width="15" Height="15" Visibility="Collapsed">
+                                            <Canvas Width="24" Height="24">
+                                                <Path x:Name="PinFilledPath" StrokeThickness="1.8" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                      Data="M12,17 L12,22 M9,10.76 A2,2 0 0 1 7.89,12.55 L6.11,13.45 A2,2 0 0 0 5,15.24 L5,16 A1,1 0 0 0 6,17 L18,17 A1,1 0 0 0 19,16 L19,15.24 A2,2 0 0 0 17.89,13.45 L16.11,12.55 A2,2 0 0 1 15,10.76 L15,7 A1,1 0 0 1 16,6 A2,2 0 0 0 16,2 L8,2 A2,2 0 0 0 8,6 A1,1 0 0 1 9,7 Z"/>
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Grid></Button>
                                     <Button Click="Copy_Click" ToolTip="Copy whole note"><TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
                                     <Button x:Name="ExportButton" Click="Download_Click" MouseEnter="ExportButton_MouseEnter" ToolTipService.IsEnabled="False"><TextBlock Text="&#xE896;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
                                     <Button Click="Delete_Click" ToolTip="Delete note"><TextBlock Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
@@ -229,6 +239,13 @@
                                     <CheckBox x:Name="SetList" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Setting_Click" VerticalAlignment="Center"/>
                                     <StackPanel VerticalAlignment="Center"><TextBlock Text="Show the notes list" FontSize="14"/></StackPanel>
                                 </DockPanel>
+                                <DockPanel Margin="0,7">
+                                    <CheckBox x:Name="SetAutoSave" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Setting_Click" VerticalAlignment="Center" VerticalContentAlignment="Top"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Save automatically" FontSize="14"/>
+                                        <TextBlock Text="Turn off to save only when you press Ctrl+S." FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,16,0"/>
+                                    </StackPanel>
+                                </DockPanel>
 
                                     <TextBlock Text="WINDOWS" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" Margin="0,18,0,4"/>
                                     <DockPanel Margin="0,7">
@@ -287,6 +304,11 @@
                         <StackPanel>
                             <TextBlock x:Name="DialogTitle" FontSize="18" FontWeight="SemiBold" TextOptions.TextFormattingMode="Display"/>
                             <TextBlock x:Name="DialogText" Foreground="{DynamicResource Text}" Opacity="0.8" FontSize="14" TextWrapping="Wrap" Margin="0,10,0,20" LineHeight="21" TextOptions.TextFormattingMode="Display"/>
+                            <StackPanel x:Name="DialogKind" Orientation="Horizontal" Visibility="Collapsed" Margin="0,0,0,12">
+                                <RadioButton x:Name="KindPassword" Style="{StaticResource Seg}" Content="Password" Tag="0" Click="DialogKind_Click" IsChecked="True"/>
+                                <RadioButton x:Name="KindPin4" Style="{StaticResource Seg}" Content="4-digit PIN" Tag="4" Click="DialogKind_Click" Margin="2,0,0,0"/>
+                                <RadioButton x:Name="KindPin6" Style="{StaticResource Seg}" Content="6-digit PIN" Tag="6" Click="DialogKind_Click" Margin="2,0,0,0"/>
+                            </StackPanel>
                             <PasswordBox x:Name="DialogPw1" Visibility="Collapsed" Margin="0,0,0,10"/>
                             <PasswordBox x:Name="DialogPw2" Visibility="Collapsed" Margin="0,0,0,10"/>
                             <TextBlock x:Name="DialogError" Foreground="#E5484D" FontSize="13" Visibility="Collapsed" Margin="2,0,0,12"/>

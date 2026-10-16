@@ -14,6 +14,8 @@ public sealed class Note : INotifyPropertyChanged
     private string? _filePath;
     private bool _openedFromFile;
     private byte[]? _key;
+    private int _pinLength;
+    private double _order;
     private DateTime _updatedAt = DateTime.Now;
 
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -33,6 +35,12 @@ public sealed class Note : INotifyPropertyChanged
 
     /// <summary>True when the note was created by opening a file (so it stands for that file), not when an existing note was exported.</summary>
     public bool OpenedFromFile { get => _openedFromFile; set => Set(ref _openedFromFile, value); }
+
+    /// <summary>0 when the note is locked with a password; 4 or 6 when it is locked with a PIN of that many digits.</summary>
+    public int PinLength { get => _pinLength; set => Set(ref _pinLength, value is 4 or 6 ? value : 0); }
+
+    /// <summary>Position in the notes list: higher is further up. Dragging a note in the list changes it.</summary>
+    public double Order { get => _order; set => Set(ref _order, value); }
 
     /// <summary>The encrypted text of a password protected note.</summary>
     public string? Vault { get; set; }

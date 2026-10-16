@@ -207,6 +207,103 @@ internal static class Program
             Assert(allNotes.Contains(ownNote) && ownNote.FilePath is null && ownNote.Content == "an app note that was downloaded", "keeping the note unlinks it and loses nothing");
             Console.WriteLine("PASS: deleting a file that is open asks to restore it or close the note");
 
+            // Locking with a PIN of 4 or 6 digits.
+            var pinNote = new Note { Title = "PIN secret", Content = "pin protected text" };
+            NoteLock.Lock(pinNote, "123456");
+            pinNote.PinLength = 6;
+            Pump(store.SaveAsync([pinNote]));
+            var pinLoaded = Await(store.LoadAsync())[0];
+            Assert(pinLoaded.IsLocked && pinLoaded.PinLength == 6, "a PIN note remembers that its PIN has 6 digits");
+            Assert(!NoteLock.TryUnlock(pinLoaded, "123457") && NoteLock.TryUnlock(pinLoaded, "123456") && pinLoaded.Content == "pin protected text", "the PIN unlocks the note and a wrong PIN does not");
+            NoteLock.Remove(pinLoaded);
+            Assert(pinLoaded.PinLength == 0 && !pinLoaded.IsLocked, "removing the lock forgets the PIN length");
+            Assert(new Note { PinLength = 5 }.PinLength == 0 && new Note { PinLength = 4 }.PinLength == 4 && new Note { PinLength = 6 }.PinLength == 6, "a PIN has 4 or 6 digits, nothing else");
+            Assert(PinInput.IsDigits("0123456789") && !PinInput.IsDigits("12a4") && !PinInput.IsDigits("") && !PinInput.IsDigits("12 4") && !PinInput.IsDigits("\u0661\u0662\u0663"), "a PIN is made of the digits 0 to 9 only");
+            Pump(store.SaveAsync([new Note { Title = "plain", PinLength = 4 }]));
+            Assert(Await(store.LoadAsync())[0].PinLength == 0, "a note without a lock never keeps a PIN length");
+            Console.WriteLine("PASS: notes can be locked with a 4 or 6 digit PIN");
+
+            // The same through the window: the lock dialog offers password / 4-digit PIN / 6-digit PIN and only accepts digits for a PIN.
+            var lockTarget = new Note { Title = "Locked by PIN", Content = "behind a pin" };
+            addNote.Invoke(window, [lockTarget]);
+            var lockTask = (Task)typeof(MainWindow).GetMethod("LockNoteAsync", nonPublic)!.Invoke(window, [lockTarget])!;
+            Assert(window.DialogLayer.Visibility == System.Windows.Visibility.Visible && window.DialogKind.Visibility == System.Windows.Visibility.Visible, "the lock dialog lets you choose between a password and a PIN");
+            window.KindPin4.IsChecked = true;
+            window.KindPin4.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            Assert(window.DialogPw1.MaxLength == 4 && window.DialogPw2.MaxLength == 4, "a 4-digit PIN limits both boxes to 4 characters");
+            window.DialogPw1.Password = "12a4"; window.DialogPw2.Password = "12a4";
+            Click("DialogOk_Click");
+            Assert(window.DialogError.Visibility == System.Windows.Visibility.Visible && window.DialogError.Text.Contains("4 digits"), "letters are refused for a PIN");
+            window.DialogPw1.Password = "1234"; window.DialogPw2.Password = "1235";
+            Click("DialogOk_Click");
+            Assert(window.DialogError.Text.Contains("don't match"), "the PIN has to be typed twice the same");
+            window.DialogPw2.Password = "1234";
+            Click("DialogOk_Click");
+            Pump(lockTask);
+            Assert(lockTarget.IsLocked && lockTarget.PinLength == 4 && NoteLock.Verify(lockTarget, "1234") && !NoteLock.Verify(lockTarget, "4321"), "the note is locked with the chosen PIN");
+            Assert(window.DialogKind.Visibility == System.Windows.Visibility.Collapsed && window.DialogPw1.MaxLength == 0, "the dialog goes back to normal afterwards");
+            Console.WriteLine("PASS: the lock dialog creates PIN locked notes");
+
+            // Arranging the notes list: dragging gives a note a new order, pinned notes stay on top, everything is remembered.
+            var topOrder = typeof(MainWindow).GetMethod("TopOrder", nonPublic)!;
+            var moveNote = typeof(MainWindow).GetMethod("MoveNote", nonPublic)!;
+            var view = () => ((System.ComponentModel.ICollectionView)typeof(MainWindow).GetField("_notesView", nonPublic)!.GetValue(window)!).Cast<Note>().Where(n => n.Title.StartsWith("Arr ")).Select(n => n.Title).ToList();
+            var arranged = new List<Note>();
+            foreach (var title in new[] { "Arr A", "Arr B", "Arr C", "Arr D" })
+            {
+                var n = new Note { Title = title, Order = (double)topOrder.Invoke(window, null)! };
+                addNote.Invoke(window, [n]);
+                arranged.Add(n);
+            }
+            Assert(string.Join(",", view()) == "Arr D,Arr C,Arr B,Arr A", "new notes appear on top of the list");
+            List<Note> Others(Note n) => ((System.ComponentModel.ICollectionView)typeof(MainWindow).GetField("_notesView", nonPublic)!.GetValue(window)!).Cast<Note>().Where(x => x != n).ToList();
+            moveNote.Invoke(window, [arranged[0], Others(arranged[0]), 0]);   // A to the very top
+            Assert(string.Join(",", view()) == "Arr A,Arr D,Arr C,Arr B", "a note can be dragged to the top");
+            moveNote.Invoke(window, [arranged[0], Others(arranged[0]), Others(arranged[0]).Count]);   // A to the very bottom
+            Assert(string.Join(",", view()) == "Arr D,Arr C,Arr B,Arr A", "a note can be dragged to the bottom");
+            var others = Others(arranged[3]);
+            moveNote.Invoke(window, [arranged[3], others, others.IndexOf(arranged[0])]);   // D from the top to just above A
+            Assert(string.Join(",", view()) == "Arr C,Arr B,Arr D,Arr A", "a note can be dragged between two others");
+            arranged[2].IsPinned = true;
+            Assert(view()[0] == "Arr C", "a pinned note always stays above the others, whatever their order");
+            arranged[2].IsPinned = false;
+            var before = string.Join(",", view());
+            Pump(store.SaveAsync(allNotes.ToList()));
+            var reloadedOrder = Await(store.LoadAsync()).Where(n => n.Title.StartsWith("Arr ")).OrderByDescending(n => n.Order).Select(n => n.Title);
+            Assert(string.Join(",", reloadedOrder) == before, "the arranged order survives saving and loading");
+            var typing = arranged[3];
+            typing.UpdatedAt = DateTime.Now.AddHours(1);
+            Assert(string.Join(",", view()) == before, "editing a note no longer moves it to the top");
+            Console.WriteLine("PASS: notes can be arranged in the list and the order is kept");
+
+            // Automatic saving can be turned off: nothing is written until Ctrl+S, and closing asks about unsaved changes.
+            var settingsField = (Settings)typeof(MainWindow).GetField("_settings", nonPublic)!.GetValue(window)!;
+            var dirtyField = typeof(MainWindow).GetField("_dirty", nonPublic)!;
+            var timer = (System.Windows.Threading.DispatcherTimer)typeof(MainWindow).GetField("_saveTimer", nonPublic)!.GetValue(window)!;
+            var queueSave = typeof(MainWindow).GetMethod("QueueSave", nonPublic)!;
+            Assert(new Settings().AutoSave, "automatic saving is on by default");
+            Pump((Task)typeof(MainWindow).GetMethod("SaveAsync", nonPublic)!.Invoke(window, null)!);
+            settingsField.AutoSave = false;
+            var edited = new Note { Title = "Manual save", Content = "version one", Order = (double)topOrder.Invoke(window, null)! };
+            addNote.Invoke(window, [edited]);
+            queueSave.Invoke(window, null);
+            Assert(!timer.IsEnabled && (bool)dirtyField.GetValue(window)! && window.SavedLabel.Text == "Unsaved changes", "with automatic saving off an edit only marks the note as unsaved");
+            Assert(!File.ReadAllText(Path.Combine(dataDirectory, "notes.json")).Contains("Manual save"), "nothing is written to disk until you save");
+            var closing = new System.ComponentModel.CancelEventArgs();
+            typeof(MainWindow).GetMethod("HandleClosing", nonPublic)!.Invoke(window, [window, closing]);
+            Assert(closing.Cancel && window.DialogTitle.Text == "Save your changes?", "closing with unsaved changes asks whether to save them");
+            Assert(window.DialogCancel.Content as string == "Don't save" && window.DialogOk.Content as string == "Save", "the choices are Save and Don't save");
+            settingsField.AutoSave = true;   // let the window close normally from here on (the test must not close it)
+            Click("DialogCancel_Click");
+            settingsField.AutoSave = false;
+            Pump((Task)typeof(MainWindow).GetMethod("SaveAsync", nonPublic)!.Invoke(window, null)!);
+            Assert(File.ReadAllText(Path.Combine(dataDirectory, "notes.json")).Contains("Manual save") && !(bool)dirtyField.GetValue(window)!, "saving (Ctrl+S) writes the notes and clears the unsaved mark");
+            settingsField.AutoSave = true;
+            queueSave.Invoke(window, null);
+            Assert(timer.IsEnabled, "with automatic saving on an edit is saved after a moment again");
+            timer.Stop();
+            Console.WriteLine("PASS: automatic saving can be turned off and Ctrl+S saves");
+
             // Updates: a fake GitHub, so no network is used. Newer release found, right asset chosen, download verified, exe swapped in place.
             SynchronizationContext.SetSynchronizationContext(null);   // these tests wait on tasks; with the dispatcher context they would wait on themselves
             var exeBytes = new byte[2048];
@@ -251,6 +348,9 @@ internal static class Program
             GC.KeepAlive(app);
         }
     }
+
+    /// <summary>Waits for a task while keeping the dispatcher running, and returns its result.</summary>
+    private static T Await<T>(Task<T> task) { Pump(task); return task.Result; }
 
     /// <summary>Runs a task to the end on this thread and returns its result.</summary>
     private static T await_<T>(Task<T> task) => task.GetAwaiter().GetResult();

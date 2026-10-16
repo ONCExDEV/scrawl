@@ -85,7 +85,11 @@ public partial class NotePane : UserControl
         EditorHost.Effect = new BlurEffect { Radius = 14 };
         Editor.IsReadOnly = true;
         TitleBox.IsReadOnly = true;
+        var pin = Note?.PinLength ?? 0;
+        PinInput.Configure(UnlockBox, pin);
         UnlockBox.Password = string.Empty;
+        UnlockHint.Text = pin > 0 ? "Enter the PIN to read it." : "Enter the password to read it.";
+        UnlockError.Text = pin > 0 ? "Wrong PIN" : "Wrong password";
         UnlockError.Visibility = Visibility.Collapsed;
         Dispatcher.BeginInvoke(() => UnlockBox.Focus(), System.Windows.Threading.DispatcherPriority.Input);
     }
@@ -99,6 +103,12 @@ public partial class NotePane : UserControl
     }
 
     private void Unlock_Click(object sender, RoutedEventArgs e) => TryUnlock();
+
+    /// <summary>A PIN unlocks as soon as its last digit is typed.</summary>
+    private void UnlockBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (Note is { PinLength: > 0 } note && UnlockBox.Password.Length == note.PinLength) TryUnlock();
+    }
 
     private void UnlockBox_KeyDown(object sender, KeyEventArgs e)
     {

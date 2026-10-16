@@ -44,6 +44,11 @@ public partial class MainWindow : Window
     private bool _askingAboutMissing;
     private bool _updating;
     private bool _dialogRequiresChoice;
+    private bool _dirty;
+    private bool _discardOnClose;
+    private bool _askingToSave;
+    private int _dialogPin;
+    private string _dialogBaseText = string.Empty;
     private readonly Settings _settings = Settings.Load();
     private readonly ObservableCollection<Note> _notes = [];
     private readonly List<NotePane> _panes = [];
@@ -70,12 +75,37 @@ public partial class MainWindow : Window
         _missingTimer.Tick += async (_, _) => await CheckMissingFilesAsync();
         Activated += async (_, _) => await CheckMissingFilesAsync();
         Loaded += async (_, _) => await LoadAsync();
-        Closing += (_, _) =>
+        Closing += HandleClosing;
+    }
+
+    private void HandleClosing(object? sender, CancelEventArgs e)
+    {
+        // With automatic saving off, closing with unsaved changes asks first.
+        if (!_settings.AutoSave && _dirty && !_discardOnClose && _notesView is not null)
         {
-            _saveTimer.Stop();
-            _settings.Save();
-            if (_notesView is not null) { _store.Save(_notes.ToList()); _files.Flush(_notes); }
-        };
+            e.Cancel = true;
+            _ = AskSaveBeforeCloseAsync();
+            return;
+        }
+        _saveTimer.Stop();
+        _settings.Save();
+        if (_notesView is not null && !_discardOnClose) { _store.Save(_notes.ToList()); _files.Flush(_notes); }
+    }
+
+    private async Task AskSaveBeforeCloseAsync()
+    {
+        if (_askingToSave) return;
+        _askingToSave = true;
+        try
+        {
+            var save = await ConfirmAsync("Save your changes?", "Automatic saving is off and some changes are not saved yet.", "Save", cancelText: "Don't save", requireChoice: true);
+            if (save) await SaveAsync(); else _discardOnClose = true;
+            Close();
+        }
+        finally
+        {
+            _askingToSave = false;
+        }
     }
 
     /// <summary>Files passed on the command line, for example when a .txt file is opened with Scrawl.</summary>
@@ -126,11 +156,12 @@ public partial class MainWindow : Window
             var firstRun = !_store.Exists;
             foreach (var note in await _store.LoadAsync()) Add(note);
             _files.Adopt(_notes);
+            AssignFirstOrder();
             if (firstRun) Add(WelcomeNote());
             _notesView = CollectionViewSource.GetDefaultView(_notes);
             _notesView.Filter = FilterNote;
             _notesView.SortDescriptions.Add(new SortDescription(nameof(Note.IsPinned), ListSortDirection.Descending));
-            _notesView.SortDescriptions.Add(new SortDescription(nameof(Note.UpdatedAt), ListSortDirection.Descending));
+            _notesView.SortDescriptions.Add(new SortDescription(nameof(Note.Order), ListSortDirection.Descending));
             NotesList.ItemsSource = _notesView;
             RefreshNotesView();
             RefreshLayoutVisibility();
@@ -147,6 +178,7 @@ public partial class MainWindow : Window
 
     private static Note WelcomeNote() => new()
     {
+        Order = 1,
         Title = "Welcome to Scrawl",
         IsPinned = true,
         Content = """
@@ -193,6 +225,7 @@ public partial class MainWindow : Window
         {
             await _store.SaveAsync(_notes.ToList());
             var problem = _files.Flush(_notes);
+            _dirty = false;
             SavedLabel.Text = problem ?? (ActiveNote?.IsLinked == true ? "Saved to file" : "Saved");
         }
         catch (Exception ex)
@@ -204,6 +237,13 @@ public partial class MainWindow : Window
 
     private void QueueSave()
     {
+        _dirty = true;
+        if (!_settings.AutoSave)
+        {
+            _saveTimer.Stop();
+            SavedLabel.Text = "Unsaved changes";
+            return;
+        }
         SavedLabel.Text = "Saving…";
         _saveTimer.Stop();
         _saveTimer.Start();
@@ -211,7 +251,7 @@ public partial class MainWindow : Window
 
     private void Note_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Note.IsPinned) or nameof(Note.UpdatedAt)) _notesView?.Refresh();
+        if (e.PropertyName is nameof(Note.IsPinned) or nameof(Note.Order)) _notesView?.Refresh();
     }
 
     // ───────────── Panes (up to four notes side by side) ─────────────
@@ -382,8 +422,109 @@ public partial class MainWindow : Window
         finally
         {
             DropLayer.Visibility = Visibility.Collapsed;
+            ReorderLine.Visibility = Visibility.Collapsed;
             _pressing = false;
         }
+    }
+
+    // ───────────── Order of the notes list ─────────────
+
+    /// <summary>Order value that puts a note above all others.</summary>
+    private double TopOrder() => _notes.Count == 0 ? 1 : _notes.Max(n => n.Order) + 1;
+
+    /// <summary>Notes from before the list could be arranged have no order yet: keep them in the order they were shown (latest edit on top).</summary>
+    private void AssignFirstOrder()
+    {
+        if (_notes.Count == 0 || _notes.Any(n => n.Order != 0)) return;
+        var rank = 1;
+        foreach (var note in _notes.OrderBy(n => n.UpdatedAt)) note.Order = rank++;
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is ScrollViewer viewer) return viewer;
+            if (FindScrollViewer(child) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>Where a dragged note would land: the notes as listed (without it) and the index it would get in them.</summary>
+    private (List<Note> Others, int Index, double LineY)? ReorderTarget(Note dragged, Point position)
+    {
+        if (_notesView is null || SearchBox.Text.Trim().Length > 0) return null;   // with a search active the list shows only some of the notes
+        var shown = _notesView.Cast<Note>().ToList();
+        var index = shown.Count;
+        double lineY = 0;
+        for (var i = 0; i < shown.Count; i++)
+        {
+            if (NotesList.ItemContainerGenerator.ContainerFromItem(shown[i]) is not ListBoxItem item) continue;
+            var bounds = item.TransformToAncestor(NotesList).TransformBounds(new Rect(item.RenderSize));
+            if (i == shown.Count - 1 || position.Y < bounds.Top + bounds.Height / 2)
+            {
+                var before = position.Y < bounds.Top + bounds.Height / 2;
+                index = before ? i : i + 1;
+                lineY = before ? bounds.Top : bounds.Bottom;
+                break;
+            }
+        }
+        var others = shown.Where(n => n != dragged).ToList();
+        var at = Math.Min(shown.Take(index).Count(n => n != dragged), others.Count);
+        // Pinned notes stay above the others: a note can only be moved within its own group.
+        var pinned = others.Count(n => n.IsPinned);
+        at = dragged.IsPinned ? Math.Min(at, pinned) : Math.Max(at, pinned);
+        return (others, at, lineY);
+    }
+
+    private Note? DraggedNote(IDataObject data) =>
+        data.GetData(DragFormat) is string id && Guid.TryParse(id, out var guid) ? _notes.FirstOrDefault(n => n.Id == guid) : null;
+
+    private void NotesList_DragOver(object sender, DragEventArgs e)
+    {
+        if (DraggedNote(e.Data) is not { } note || ReorderTarget(note, e.GetPosition(NotesList)) is not { } target)
+        {
+            ReorderLine.Visibility = Visibility.Collapsed;
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+        // Scroll when the note is dragged to the top or bottom edge of the list.
+        var position = e.GetPosition(NotesList);
+        if (FindScrollViewer(NotesList) is { } viewer)
+        {
+            if (position.Y < 28) viewer.ScrollToVerticalOffset(viewer.VerticalOffset - 14);
+            else if (position.Y > NotesList.ActualHeight - 28) viewer.ScrollToVerticalOffset(viewer.VerticalOffset + 14);
+        }
+        ReorderLine.Margin = new Thickness(20, Math.Max(0, target.LineY - 1.5), 22, 0);
+        ReorderLine.Visibility = Visibility.Visible;
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void NotesList_DragLeave(object sender, DragEventArgs e) => ReorderLine.Visibility = Visibility.Collapsed;
+
+    private void NotesList_Drop(object sender, DragEventArgs e)
+    {
+        ReorderLine.Visibility = Visibility.Collapsed;
+        if (DraggedNote(e.Data) is not { } note || ReorderTarget(note, e.GetPosition(NotesList)) is not { } target) return;
+        e.Handled = true;
+        MoveNote(note, target.Others, target.Index);
+    }
+
+    /// <summary>Puts a note at an index among the other notes as listed, by giving it an order value between its new neighbours.</summary>
+    private void MoveNote(Note note, List<Note> others, int index)
+    {
+        // Spread the orders out first, so there is always room between two neighbours.
+        var value = others.Count + 1;
+        foreach (var other in others) other.Order = value--;
+        var above = index > 0 ? others[index - 1] : null;
+        var below = index < others.Count ? others[index] : null;
+        note.Order = above is null && below is null ? 1 : above is null ? below!.Order + 1 : below is null ? above.Order - 1 : (above.Order + below.Order) / 2;
+        _notesView?.Refresh();
+        if (_active?.Note is { } current) NotesList.SelectedItem = current;
+        QueueSave();
     }
 
     private void ShowDropTiles()
@@ -490,7 +631,7 @@ public partial class MainWindow : Window
     {
         if (_notesView is null) return;
         SearchBox.Clear();
-        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
+        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Order = TopOrder(), Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
         Add(note);
         RefreshNotesView();
         OpenNote(note);
@@ -611,6 +752,9 @@ public partial class MainWindow : Window
     /// <summary>True when the note's text is available (no password, or already unlocked).</summary>
     private static bool Readable(Note note) => !note.IsLocked || note.IsUnlocked;
 
+    /// <summary>"PIN" or "password", for the texts of a locked note.</summary>
+    private static string LockWord(Note note) => note.PinLength > 0 ? "PIN" : "password";
+
     private List<Entry> LockEntries(Note note)
     {
         var entries = new List<Entry>();
@@ -620,10 +764,10 @@ public partial class MainWindow : Window
             entries.Add(new("Unlink from file", null, () => { _files.Untrack(note); note.FilePath = null; QueueSave(); }));
             entries.Add(new(null));
         }
-        if (!note.IsLocked) { entries.Add(new("Lock with password…", null, () => _ = LockNoteAsync(note))); return entries; }
+        if (!note.IsLocked) { entries.Add(new("Lock with password or PIN…", null, () => _ = LockNoteAsync(note))); return entries; }
         if (note.IsUnlocked) entries.Add(new("Lock now", null, () => RelockNote(note)));
         else entries.Add(new("Unlock…", null, () => OpenNote(note)));
-        entries.Add(new("Remove password…", null, () => _ = RemovePasswordAsync(note)));
+        entries.Add(new($"Remove {LockWord(note)}…", null, () => _ = RemovePasswordAsync(note)));
         return entries;
     }
 
@@ -642,9 +786,10 @@ public partial class MainWindow : Window
             _files.Untrack(note);
             note.FilePath = null;
         }
-        var password = await PromptPasswordAsync("Lock note", $"Choose a password for “{note.Title}”. You'll need it to open or delete the note. If you forget it, the note can't be recovered.", "Lock note", confirm: true);
-        if (password is null) return;
-        NoteLock.Lock(note, password);
+        var chosen = await PromptNewLockAsync("Lock note", $"Choose a password or a PIN for “{note.Title}”. You'll need it to open or delete the note. If you forget it, the note can't be recovered.", "Lock note");
+        if (chosen is not var (secret, pin)) return;
+        NoteLock.Lock(note, secret);
+        note.PinLength = pin;
         RefreshPanesFor(note);
         await SaveAsync();
     }
@@ -658,7 +803,7 @@ public partial class MainWindow : Window
 
     private async Task RemovePasswordAsync(Note note)
     {
-        var password = await PromptPasswordAsync("Remove password", $"Enter the password of “{note.Title}” to remove its protection.", "Remove", confirm: false, check: pw => NoteLock.Verify(note, pw));
+        var password = await PromptPasswordAsync($"Remove {LockWord(note)}", $"Enter the {LockWord(note)} of “{note.Title}” to remove its protection.", "Remove", confirm: false, check: pw => NoteLock.Verify(note, pw), pinLength: note.PinLength);
         if (password is null) return;
         if (!note.IsUnlocked) NoteLock.TryUnlock(note, password);
         NoteLock.Remove(note);
@@ -678,15 +823,17 @@ public partial class MainWindow : Window
     private void UpdatePinIcon()
     {
         var pinned = ActiveNote?.IsPinned == true;
-        PinIcon.Text = pinned ? "" : "";
-        if (pinned) PinIcon.Foreground = Themes.Get("Accent"); else PinIcon.ClearValue(TextBlock.ForegroundProperty);
+        PinIcon.Text = "\uE718";
+        PinIcon.Visibility = pinned ? Visibility.Collapsed : Visibility.Visible;
+        PinFilledIcon.Visibility = pinned ? Visibility.Visible : Visibility.Collapsed;
+        PinFilledPath.Fill = PinFilledPath.Stroke = Themes.Get("Accent");
         PinButton.ToolTip = pinned ? "Unpin note" : "Pin note";
     }
 
     private void DuplicateNote(Note source)
     {
         if (!Readable(source)) return;
-        var copy = new Note { Title = source.Title + " (copy)", Content = source.Content, Language = source.Language, UpdatedAt = DateTime.Now };
+        var copy = new Note { Title = source.Title + " (copy)", Content = source.Content, Language = source.Language, UpdatedAt = DateTime.Now, Order = TopOrder() };
         Add(copy);
         RefreshNotesView();
         OpenNote(copy);
@@ -887,7 +1034,7 @@ public partial class MainWindow : Window
                 };
                 // A new file that looks like code opens as a Code note instead of Notepad (only the first time; the choice is kept afterwards).
                 if (language == "text" && extension is not (".md" or ".log") && snapshot.Text.Length >= 40 && CodeHighlighter.Guess(snapshot.Text) is { } detected) language = detected;
-                last = new Note { OpenedFromFile = true, Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, FilePath = full };
+                last = new Note { OpenedFromFile = true, Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, Order = TopOrder(), FilePath = full };
                 _files.Track(last, snapshot);
                 Add(last);
             }
@@ -916,7 +1063,7 @@ public partial class MainWindow : Window
     {
         if (note.IsLocked)
         {
-            if (await PromptPasswordAsync("Delete locked note?", $"Enter the password of “{note.Title}” to delete it. This can't be undone.", "Delete", confirm: false, check: pw => NoteLock.Verify(note, pw), danger: true) is null) return;
+            if (await PromptPasswordAsync("Delete locked note?", $"Enter the {LockWord(note)} of “{note.Title}” to delete it. This can't be undone.", "Delete", confirm: false, check: pw => NoteLock.Verify(note, pw), danger: true, pinLength: note.PinLength) is null) return;
         }
         else if (!await ConfirmAsync("Delete note?", $"“{note.Title}” will be deleted from this device." + (note.IsLinked ? " The file on disk is not touched." : " This can't be undone."), "Delete", danger: true)) return;
         note.PropertyChanged -= Note_PropertyChanged;
@@ -1067,6 +1214,7 @@ public partial class MainWindow : Window
                 _settings.Save();
                 _store.Save(_notes.ToList());
                 _files.Flush(_notes);
+                _dirty = false;
                 Updater.Replace(download, exe);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1103,6 +1251,7 @@ public partial class MainWindow : Window
         SetNumbersText.IsChecked = _settings.LineNumbersText;
         SetNumbersCode.IsChecked = _settings.LineNumbersCode;
         SetList.IsChecked = !_settings.SidebarCollapsed;
+        SetAutoSave.IsChecked = _settings.AutoSave;
         NewKindText.IsChecked = _settings.NewNoteKind != "code";
         NewKindCode.IsChecked = _settings.NewNoteKind == "code";
         _loadingSettingsUi = false;
@@ -1126,6 +1275,13 @@ public partial class MainWindow : Window
         _settings.LineNumbersText = SetNumbersText.IsChecked == true;
         _settings.LineNumbersCode = SetNumbersCode.IsChecked == true;
         SetSidebar(SetList.IsChecked == true);
+        var autoSave = SetAutoSave.IsChecked == true;
+        if (autoSave != _settings.AutoSave)
+        {
+            _settings.AutoSave = autoSave;
+            if (autoSave && _dirty) { _saveTimer.Stop(); _ = SaveAsync(); }
+            else if (!autoSave && _saveTimer.IsEnabled) { _saveTimer.Stop(); SavedLabel.Text = "Unsaved changes"; }
+        }
         ApplyAllPanes();
     }
 
@@ -1190,7 +1346,7 @@ public partial class MainWindow : Window
 
     // ───────────── In-app dialog ─────────────
 
-    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false)
+    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false, bool kindChoice = false, int pinLength = 0)
     {
         _dialog?.TrySetResult(false);
         _dialog = new TaskCompletionSource<bool>();
@@ -1205,6 +1361,12 @@ public partial class MainWindow : Window
         DialogOk.Foreground = danger ? Brushes.White : Themes.Get("AccentText");
         DialogCancel.Visibility = showCancel ? Visibility.Visible : Visibility.Collapsed;
         DialogError.Visibility = Visibility.Collapsed;
+        _dialogBaseText = message;
+        _dialogPin = kindChoice ? 0 : pinLength;
+        PinInput.Configure(DialogPw1, _dialogPin);
+        PinInput.Configure(DialogPw2, _dialogPin);
+        DialogKind.Visibility = kindChoice ? Visibility.Visible : Visibility.Collapsed;
+        if (kindChoice) KindPassword.IsChecked = true;
         DialogPw1.Clear();
         DialogPw2.Clear();
         DialogPw1.Visibility = passwordBoxes >= 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -1217,20 +1379,56 @@ public partial class MainWindow : Window
     private Task Info(string title, string message) => ConfirmAsync(title, message, "OK", showCancel: false);
 
     /// <summary>Asks for a password inside the app. Returns null when cancelled.</summary>
-    private async Task<string?> PromptPasswordAsync(string title, string message, string ok, bool confirm, Func<string, bool>? check = null, bool danger = false)
+    private async Task<string?> PromptPasswordAsync(string title, string message, string ok, bool confirm, Func<string, bool>? check = null, bool danger = false, int pinLength = 0)
     {
         string? result = null;
         var accepted = await ConfirmAsync(title, message + (confirm ? "\n\nType the password twice." : string.Empty), ok, danger, validate: () =>
         {
             var password = DialogPw1.Password;
-            if (password.Length == 0) return "Enter a password.";
+            if (password.Length == 0) return pinLength > 0 ? "Enter the PIN." : "Enter a password.";
             if (confirm && password.Length < 4) return "Use at least 4 characters.";
             if (confirm && password != DialogPw2.Password) return "The two passwords don't match.";
-            if (check is not null && !check(password)) return "Wrong password.";
+            if (check is not null && !check(password)) return pinLength > 0 ? "Wrong PIN." : "Wrong password.";
             result = password;
             return null;
-        }, passwordBoxes: confirm ? 2 : 1);
+        }, passwordBoxes: confirm ? 2 : 1, pinLength: pinLength);
         return accepted ? result : null;
+    }
+
+    /// <summary>Asks for a new password or a 4 or 6 digit PIN (typed twice). Returns null when cancelled.</summary>
+    private async Task<(string Secret, int PinLength)?> PromptNewLockAsync(string title, string message, string ok)
+    {
+        (string, int)? result = null;
+        var accepted = await ConfirmAsync(title, message + "\n\nType it twice.", ok, validate: () =>
+        {
+            var secret = DialogPw1.Password;
+            if (_dialogPin > 0)
+            {
+                if (secret.Length != _dialogPin || !PinInput.IsDigits(secret)) return $"Enter exactly {_dialogPin} digits (0 to 9).";
+            }
+            else
+            {
+                if (secret.Length == 0) return "Enter a password.";
+                if (secret.Length < 4) return "Use at least 4 characters.";
+            }
+            if (secret != DialogPw2.Password) return _dialogPin > 0 ? "The two PINs don't match." : "The two passwords don't match.";
+            result = (secret, _dialogPin);
+            return null;
+        }, passwordBoxes: 2, kindChoice: true);
+        return accepted ? result : null;
+    }
+
+    /// <summary>The Password / 4-digit PIN / 6-digit PIN choice of the lock dialog.</summary>
+    private void DialogKind_Click(object sender, RoutedEventArgs e)
+    {
+        _dialogPin = int.Parse((string)((RadioButton)sender).Tag);
+        PinInput.Configure(DialogPw1, _dialogPin);
+        PinInput.Configure(DialogPw2, _dialogPin);
+        DialogPw1.Clear();
+        DialogPw2.Clear();
+        DialogError.Visibility = Visibility.Collapsed;
+        DialogText.Text = _dialogBaseText + (_dialogPin > 0 ? $"\n\nA {_dialogPin}-digit PIN is quick to type, but far easier to guess than a password." : string.Empty);
+        DialogPw1.Focus();
     }
 
     private void AcceptDialog()
@@ -1247,6 +1445,9 @@ public partial class MainWindow : Window
     private void CloseDialog(bool result)
     {
         DialogLayer.Visibility = Visibility.Collapsed;
+        DialogKind.Visibility = Visibility.Collapsed;
+        PinInput.Configure(DialogPw1, 0);
+        PinInput.Configure(DialogPw2, 0);
         DialogPw1.Clear();
         DialogPw2.Clear();
         _dialogValidator = null;

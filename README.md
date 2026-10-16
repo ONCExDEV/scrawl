@@ -27,7 +27,9 @@ It is a single ~1 MB executable. No installer, no account, no telemetry. Scrawl 
 - **Notepad notes**: plain text only. No colors, no line highlight, no auto-indent. Enter works like a classic notepad
 - **Code notes**: syntax colors for C#, JavaScript, TypeScript, Python, Java, C/C++, Go, Rust, JSON, HTML/XML, CSS, SQL and shell. Paste code into a notepad note and the language is detected for you
 - **Up to four notes side by side**: drag a note from the list onto the editor and drop it on a tile. Drag the dividers to resize
-- **Password locked notes**: encrypted on disk (AES-256-GCM) and blurred until you enter the password. Deleting a locked note asks for it too
+- **Password or PIN locked notes**: choose a password, or a 4 or 6 digit PIN (digits 0 to 9, typed twice). Locked notes are encrypted on disk (AES-256-GCM) and blurred until you enter the password or PIN. A PIN unlocks as soon as the last digit is typed. Deleting a locked note asks for it too
+- **Arrange your notes**: drag a note up or down in the list to put it where you want it. Pinned notes always stay on top, and editing a note no longer moves it
+- **Automatic saving can be turned off** in Settings: then notes are only saved when you press `Ctrl+S`, and closing with unsaved changes asks first
 - **One-click download**: saves the note as `.txt` in your Downloads folder and keeps the note linked to that file, so opening the file later shows the same note and downloading again updates it. Hover the button to export with any extension you type
 - **17 themes**: Dark+, Light+, Monokai, Dracula, Nord, Solarized (dark and light), Tokyo Night, One Dark, GitHub (dark and light), Catppuccin Mocha, Gruvbox (dark and light), Rosé Pine, Midnight and Paper
 - **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
@@ -88,6 +90,7 @@ Requires Windows 10 or 11.
 | Click a note | Open it in the active pane |
 | Drag a note onto the editor | Open it side by side (up to four) |
 | Right-click a note | The note menu, without opening it |
+| Drag a note up or down the list | Put it where you want it (pinned notes stay on top) |
 | Hover the download button | Export with any extension |
 | Click the gear | Settings |
 | `Notepad` / `Code` above the editor | Switch what kind of note it is |
@@ -98,7 +101,7 @@ Requires Windows 10 or 11.
 | --- | --- |
 | `Ctrl+N` | New note |
 | `Ctrl+O` | Open files (edits are saved back to the file) |
-| `Ctrl+S` | Save now |
+| `Ctrl+S` | Save now (the only way to save when automatic saving is off) |
 | `Ctrl+Shift+S` | Export as `.txt` (choose a location) |
 | `Ctrl+F` | Search notes |
 | `Ctrl+B` or `Ctrl+\` | Show or hide the notes list |
@@ -114,7 +117,7 @@ Requires Windows 10 or 11.
 
 Notes are saved as you type, and every write goes through a temporary file first, so a crash cannot leave a half-written file. They live in `%LOCALAPPDATA%\Scrawl\notes.json` next to `settings.json`. Set the `SCRAWL_DATA_DIR` environment variable to use another folder.
 
-**Locked notes** are stored encrypted with AES-256-GCM, using a key derived from your password (PBKDF2, 200,000 rounds). Their text is never written to disk in plain form. If you forget a password the note cannot be recovered. Titles are not encrypted, only the text.
+**Locked notes** are stored encrypted with AES-256-GCM, using a key derived from your password (PBKDF2, 200,000 rounds). Their text is never written to disk in plain form. If you forget a password or PIN the note cannot be recovered. A PIN has only 10,000 (4 digits) or 1,000,000 (6 digits) possible values, so it keeps casual eyes out but a determined person with a copy of your notes file could try them all: use a password for anything that really matters. Titles are not encrypted, only the text.
 
 ## Build
 

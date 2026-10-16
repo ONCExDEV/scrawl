@@ -24,8 +24,8 @@
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="260">
                     <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="{DynamicResource Accent}" HorizontalAlignment="Center"/>
                     <TextBlock Text="This note is locked" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,4"/>
-                    <TextBlock Text="Enter the password to read it." Foreground="{DynamicResource Muted}" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,16"/>
-                    <PasswordBox x:Name="UnlockBox" KeyDown="UnlockBox_KeyDown"/>
+                    <TextBlock x:Name="UnlockHint" Text="Enter the password to read it." Foreground="{DynamicResource Muted}" FontSize="12.5" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                    <PasswordBox x:Name="UnlockBox" KeyDown="UnlockBox_KeyDown" PasswordChanged="UnlockBox_PasswordChanged"/>
                     <TextBlock x:Name="UnlockError" Foreground="#E5484D" FontSize="12" Margin="2,6,0,0" Visibility="Collapsed" Text="Wrong password"/>
                     <Button Style="{StaticResource AccentButton}" Content="Unlock" Click="Unlock_Click" Margin="0,12,0,0" HorizontalAlignment="Stretch"/>
                 </StackPanel>

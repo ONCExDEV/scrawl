@@ -91,5 +91,6 @@ public static class NoteLock
         note.LockSalt = null;
         note.Vault = null;
         note.Key = null;
+        note.PinLength = 0;
     }
 }
