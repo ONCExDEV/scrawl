@@ -69,7 +69,6 @@ public partial class MainWindow : Window
         _flyoutTimer.Tick += FlyoutTick;
         _missingTimer.Tick += async (_, _) => await CheckMissingFilesAsync();
         Activated += async (_, _) => await CheckMissingFilesAsync();
-        UpdateButton.ToolTip = $"Check for updates (you have {Updater.Current}). Nothing is downloaded unless you press it.";
         Loaded += async (_, _) => await LoadAsync();
         Closing += (_, _) =>
         {
@@ -981,6 +980,25 @@ public partial class MainWindow : Window
     // ───────────── Update ─────────────
 
     private async void Update_Click(object sender, RoutedEventArgs e) => await UpdateAsync();
+
+    /// <summary>
+    /// Asks GitHub once, when Scrawl starts, whether a newer release exists. Only then the Update button appears.
+    /// Offline or no release: nothing happens and the button stays hidden. Nothing is downloaded here.
+    /// </summary>
+    public async Task CheckForUpdateAtStartupAsync()
+    {
+        try
+        {
+            var update = await _updater.CheckAsync(Updater.IsStandalone(SystemIntegration.CurrentExe), Updater.Current);
+            if (update is null) return;
+            UpdateButton.ToolTip = $"Version {update.Version} is available (you have {Updater.Current}). Nothing is downloaded until you press it.";
+            UpdateButton.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            // No connection or no usable answer: stay quiet, the button simply stays hidden.
+        }
+    }
 
     /// <summary>A dialog with only a Cancel button. Cancelling cancels the token; closing it from code (result true) does not.</summary>
     private (Task<bool> Closed, CancellationTokenSource Cancel) ShowBusy(string title, string text)

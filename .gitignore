@@ -16,3 +16,6 @@ publish/
 
 # Left behind when a test run is interrupted
 .scrawl-smoke-*/
+
+# The Light Notes (Tauri) rewrite lives in its own repository
+Light Notes/

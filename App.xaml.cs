@@ -46,6 +46,7 @@ public partial class App : Application
         _ = Task.Run(Services.SystemIntegration.RefreshTextFileIcon);
         _ = Task.Run(() => Services.Updater.CleanUp(Services.SystemIntegration.CurrentExe));
         _ = Task.Run(() => ListenForFiles(window));
+        _ = window.CheckForUpdateAtStartupAsync();
     }
 
     private static void WaitForExit(int processId)
