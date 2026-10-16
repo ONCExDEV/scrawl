@@ -15,12 +15,16 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Publish small exe (needs the .NET 8 Desktop Runtime)
-        run: dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish-small
+      - name: Publish small exe (needs the .NET Desktop Runtime)
+        run: |
+          $version = "$env:GITHUB_REF_NAME".TrimStart('v')
+          dotnet publish Scrawl.csproj -c Release -r win-x64 -p:Version=$version -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -o publish-small
       - name: Clean build folders
         run: Remove-Item -Recurse -Force obj, bin
       - name: Publish standalone exe (runtime included)
-        run: dotnet publish Scrawl.csproj -c Release -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish-standalone
+        run: |
+          $version = "$env:GITHUB_REF_NAME".TrimStart('v')
+          dotnet publish Scrawl.csproj -c Release -r win-x64 -p:Version=$version -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o publish-standalone
       - name: Create release
         shell: bash
         env:

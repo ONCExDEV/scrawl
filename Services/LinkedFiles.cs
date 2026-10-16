@@ -54,7 +54,7 @@ public sealed class LinkedFiles
         {
             try
             {
-                if (!File.Exists(note.FilePath)) { note.FilePath = null; continue; }
+                if (!File.Exists(note.FilePath)) continue;   // gone: the window asks the user what to do
                 var snapshot = Read(note.FilePath!);
                 if (snapshot.Text != note.Content && File.GetLastWriteTime(note.FilePath!) > note.UpdatedAt) note.Content = snapshot.Text;
                 Track(note, snapshot);
@@ -64,6 +64,21 @@ public sealed class LinkedFiles
                 // Keep the note as it is; the next save tries again.
             }
         }
+    }
+
+    /// <summary>Linked notes whose file no longer exists.</summary>
+    public IEnumerable<Note> Missing(IEnumerable<Note> notes) =>
+        notes.Where(n => n.FilePath is not null && !n.IsLocked && !File.Exists(n.FilePath));
+
+    /// <summary>Writes the note's text to its file again, after the user chose to undo the deletion.</summary>
+    public void Restore(Note note)
+    {
+        var state = _states.GetValueOrDefault(note.Id);
+        var encoding = state?.Encoding ?? new UTF8Encoding(false);
+        var crlf = state?.CrLf ?? true;
+        Directory.CreateDirectory(Path.GetDirectoryName(note.FilePath!)!);
+        File.WriteAllText(note.FilePath!, crlf ? note.Content.Replace("\n", "\r\n") : note.Content, encoding);
+        _states[note.Id] = new State(note.Content, encoding, crlf);
     }
 
     /// <summary>Writes every linked note whose text changed. Returns a short message when something went wrong.</summary>
@@ -76,13 +91,7 @@ public sealed class LinkedFiles
             if (state is not null && state.Disk == note.Content) continue;
             try
             {
-                if (!File.Exists(note.FilePath))
-                {
-                    note.FilePath = null;
-                    _states.Remove(note.Id);
-                    problem = $"“{note.Title}” was removed from disk, so it is no longer linked to a file";
-                    continue;
-                }
+                if (!File.Exists(note.FilePath)) continue;   // deleted elsewhere: never bring it back without asking
                 var encoding = state?.Encoding ?? new UTF8Encoding(false);
                 var crlf = state?.CrLf ?? true;
                 File.WriteAllText(note.FilePath!, crlf ? note.Content.Replace("\n", "\r\n") : note.Content, encoding);

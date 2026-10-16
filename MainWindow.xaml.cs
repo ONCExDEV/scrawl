@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Net.Http;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -36,6 +38,12 @@ public partial class MainWindow : Window
 
     private readonly NoteStore _store = new();
     private readonly LinkedFiles _files = new();
+    private readonly Updater _updater = new();
+    private readonly DispatcherTimer _missingTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly HashSet<Guid> _missingAsked = [];
+    private bool _askingAboutMissing;
+    private bool _updating;
+    private bool _dialogRequiresChoice;
     private readonly Settings _settings = Settings.Load();
     private readonly ObservableCollection<Note> _notes = [];
     private readonly List<NotePane> _panes = [];
@@ -59,6 +67,9 @@ public partial class MainWindow : Window
 
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveAsync(); };
         _flyoutTimer.Tick += FlyoutTick;
+        _missingTimer.Tick += async (_, _) => await CheckMissingFilesAsync();
+        Activated += async (_, _) => await CheckMissingFilesAsync();
+        UpdateButton.ToolTip = $"Check for updates (you have {Updater.Current}). Nothing is downloaded unless you press it.";
         Loaded += async (_, _) => await LoadAsync();
         Closing += (_, _) =>
         {
@@ -127,6 +138,7 @@ public partial class MainWindow : Window
             if (firstRun) { OpenNote(_notes[0]); await SaveAsync(); }
             if (StartupFiles.Length > 0) await ImportPathsAsync(StartupFiles);
             if (!_settings.WelcomeDone) ShowWelcome();
+            _missingTimer.Start();
         }
         catch (Exception ex)
         {
@@ -874,7 +886,9 @@ public partial class MainWindow : Window
                     ".c" or ".h" or ".hpp" => "cpp", ".ps1" => "shell", ".htm" or ".xml" => "html", ".md" or ".log" => "text",
                     _ => Extensions.FirstOrDefault(p => p.Value == extension).Key ?? "text"
                 };
-                last = new Note { Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, FilePath = full };
+                // A new file that looks like code opens as a Code note instead of Notepad (only the first time; the choice is kept afterwards).
+                if (language == "text" && extension is not (".md" or ".log") && snapshot.Text.Length >= 40 && CodeHighlighter.Guess(snapshot.Text) is { } detected) language = detected;
+                last = new Note { OpenedFromFile = true, Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, FilePath = full };
                 _files.Track(last, snapshot);
                 Add(last);
             }
@@ -911,6 +925,148 @@ public partial class MainWindow : Window
         _notes.Remove(note);
         RefreshNotesView();
         await SaveAsync();
+    }
+
+    // ───────────── Files that disappear ─────────────
+
+    /// <summary>
+    /// A file a note follows was deleted outside Scrawl. Instead of showing text for a file that is gone,
+    /// ask: restore the file from the note, or close the note (for a note that was not created from the file: keep it).
+    /// </summary>
+    private async Task CheckMissingFilesAsync()
+    {
+        if (_askingAboutMissing || _notesView is null || DialogLayer.Visibility == Visibility.Visible || WelcomeLayer.Visibility == Visibility.Visible) return;
+        var missing = _files.Missing(_notes).ToList();
+        _missingAsked.RemoveWhere(id => missing.All(n => n.Id != id));   // it came back: ask again if it disappears later
+        var note = missing.FirstOrDefault(n => !_missingAsked.Contains(n.Id));
+        if (note is null) return;
+
+        _askingAboutMissing = true;
+        _missingAsked.Add(note.Id);
+        try
+        {
+            var name = Path.GetFileName(note.FilePath);
+            var closes = note.OpenedFromFile;
+            var message = closes
+                ? $"“{name}” was deleted from disk. You can restore it from the text in Scrawl, or close the note (closing removes it from Scrawl)."
+                : $"“{name}” was deleted from disk. You can restore it from this note, or keep the note without the file.";
+            var restore = await ConfirmAsync("File was deleted", message, "Restore file", cancelText: closes ? "Close note" : "Keep note", requireChoice: true);
+            if (restore)
+            {
+                try { _files.Restore(note); _missingAsked.Remove(note.Id); SavedLabel.Text = $"Restored {name}"; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { await Info("Couldn't restore the file", ex.Message); }
+            }
+            else if (closes)
+            {
+                _files.Untrack(note);
+                note.PropertyChanged -= Note_PropertyChanged;
+                foreach (var pane in _panes.Where(p => p.Note == note).ToList()) RemovePane(pane);
+                _notes.Remove(note);
+                RefreshNotesView();
+                await SaveAsync();
+            }
+            else
+            {
+                _files.Untrack(note);
+                note.FilePath = null;
+                QueueSave();
+            }
+        }
+        finally
+        {
+            _askingAboutMissing = false;
+        }
+    }
+
+    // ───────────── Update ─────────────
+
+    private async void Update_Click(object sender, RoutedEventArgs e) => await UpdateAsync();
+
+    /// <summary>A dialog with only a Cancel button. Cancelling cancels the token; closing it from code (result true) does not.</summary>
+    private (Task<bool> Closed, CancellationTokenSource Cancel) ShowBusy(string title, string text)
+    {
+        var cancel = new CancellationTokenSource();
+        var closed = ConfirmAsync(title, text, "OK", okVisible: false);
+        _ = closed.ContinueWith(t => { if (!t.Result) cancel.Cancel(); }, TaskScheduler.FromCurrentSynchronizationContext());
+        return (closed, cancel);
+    }
+
+    private static string Describe(Exception ex) => ex is HttpRequestException or TaskCanceledException
+        ? "Couldn't reach GitHub. Check your internet connection and try again."
+        : ex.Message;
+
+    /// <summary>
+    /// Checks GitHub for a newer release and, only after the user agrees, downloads it, swaps the exe in place and restarts.
+    /// Same file name and location, so shortcuts and the text file setting keep working; notes live in a separate folder.
+    /// </summary>
+    private async Task UpdateAsync()
+    {
+        if (_updating) return;
+        _updating = true;
+        try
+        {
+            var exe = SystemIntegration.CurrentExe;
+
+            var (_, checkCancel) = ShowBusy("Checking for updates", "Asking GitHub for the latest version…");
+            UpdateInfo? update;
+            try { update = await _updater.CheckAsync(Updater.IsStandalone(exe), Updater.Current, checkCancel.Token); }
+            catch (OperationCanceledException) when (checkCancel.IsCancellationRequested) { return; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or InvalidOperationException or KeyNotFoundException)
+            {
+                CloseDialog(true);
+                await Info("Couldn't check for updates", Describe(ex));
+                return;
+            }
+            CloseDialog(true);
+
+            if (update is null)
+            {
+                await Info("You're up to date", $"Scrawl {Updater.Current} is the latest version.");
+                return;
+            }
+            var go = await ConfirmAsync($"Update to {update.Version}?",
+                $"A newer version is available (you have {Updater.Current}). Scrawl downloads it from GitHub, replaces itself and restarts. Your notes, settings, desktop shortcut and text file setting stay as they are.",
+                "Update", cancelText: "Not now");
+            if (!go) return;
+
+            var download = exe + ".download";
+            var (_, downloadCancel) = ShowBusy("Updating Scrawl", $"Downloading {update.Version}…");
+            var progress = new Progress<double>(p => DialogText.Text = $"Downloading {update.Version}… {p:P0}");
+            try { await _updater.DownloadAsync(update, download, progress, downloadCancel.Token); }
+            catch (OperationCanceledException) when (downloadCancel.IsCancellationRequested) { Updater.CleanUp(exe); return; }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidDataException or InvalidOperationException or UnauthorizedAccessException)
+            {
+                CloseDialog(true);
+                await Info("Update failed", Describe(ex) + " Nothing was changed.");
+                return;
+            }
+
+            DialogText.Text = "Installing…";
+            try
+            {
+                // Everything is written to disk first, so the restart can never lose anything.
+                _saveTimer.Stop();
+                _settings.Save();
+                _store.Save(_notes.ToList());
+                _files.Flush(_notes);
+                Updater.Replace(download, exe);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Updater.CleanUp(exe);
+                CloseDialog(true);
+                await Info("Couldn't install the update", $"{ex.Message}\n\nScrawl may be in a folder that needs administrator rights. Nothing was changed.");
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo(exe, $"--after-update {Environment.ProcessId}") { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! });
+            CloseDialog(true);
+            Application.Current.Shutdown();
+        }
+        finally
+        {
+            _updating = false;
+        }
     }
 
     // ───────────── Settings & welcome ─────────────
@@ -1016,7 +1172,7 @@ public partial class MainWindow : Window
 
     // ───────────── In-app dialog ─────────────
 
-    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0)
+    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false)
     {
         _dialog?.TrySetResult(false);
         _dialog = new TaskCompletionSource<bool>();
@@ -1024,6 +1180,9 @@ public partial class MainWindow : Window
         DialogTitle.Text = title;
         DialogText.Text = message;
         DialogOk.Content = ok;
+        DialogOk.Visibility = okVisible ? Visibility.Visible : Visibility.Collapsed;
+        DialogCancel.Content = cancelText;
+        _dialogRequiresChoice = requireChoice;
         DialogOk.Background = danger ? new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D)) : Themes.Get("Accent");
         DialogOk.Foreground = danger ? Brushes.White : Themes.Get("AccentText");
         DialogCancel.Visibility = showCancel ? Visibility.Visible : Visibility.Collapsed;
@@ -1073,12 +1232,13 @@ public partial class MainWindow : Window
         DialogPw1.Clear();
         DialogPw2.Clear();
         _dialogValidator = null;
+        _dialogRequiresChoice = false;
         _dialog?.TrySetResult(result);
     }
 
     private void DialogOk_Click(object sender, RoutedEventArgs e) => AcceptDialog();
     private void DialogCancel_Click(object sender, RoutedEventArgs e) => CloseDialog(false);
-    private void DialogScrim_MouseDown(object sender, MouseButtonEventArgs e) => CloseDialog(false);
+    private void DialogScrim_MouseDown(object sender, MouseButtonEventArgs e) { if (!_dialogRequiresChoice) CloseDialog(false); }
 
     // ───────────── Menus ─────────────
 
@@ -1273,8 +1433,8 @@ public partial class MainWindow : Window
     {
         if (DialogLayer.Visibility == Visibility.Visible)
         {
-            if (e.Key == Key.Escape) { CloseDialog(false); e.Handled = true; }
-            else if (e.Key == Key.Enter) { AcceptDialog(); e.Handled = true; }
+            if (e.Key == Key.Escape && !_dialogRequiresChoice) { CloseDialog(false); e.Handled = true; }
+            else if (e.Key == Key.Enter && DialogOk.Visibility == Visibility.Visible) { AcceptDialog(); e.Handled = true; }
             return;
         }
         if (WelcomeLayer.Visibility == Visibility.Visible)

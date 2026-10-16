@@ -41,6 +41,9 @@ public static class SystemIntegration
         }
     }
 
+    /// <summary>The Scrawl exe that is running.</summary>
+    internal static string CurrentExe => ExePath;
+
     public static void CreateDesktopShortcut()
     {
         var shellType = Type.GetTypeFromProgID("WScript.Shell") ?? throw new InvalidOperationException("Windows Script Host is not available.");

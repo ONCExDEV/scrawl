@@ -20,7 +20,7 @@ Plain notes, code with VS Code colors, and up to four notes side by side.
 
 Most notes apps are either too plain or too heavy. Scrawl keeps two kinds of notes in one small window: **Notepad** notes that behave exactly like a classic notepad, and **Code** notes with syntax colors, line numbers and auto-indent. Open several at once, lock the private ones with a password, and everything stays on your device.
 
-It is a single ~1 MB executable. No installer, no account, no telemetry, no network access.
+It is a single ~1 MB executable. No installer, no account, no telemetry. Scrawl only uses the network when you press **Update**.
 
 ## Features
 
@@ -32,7 +32,10 @@ It is a single ~1 MB executable. No installer, no account, no telemetry, no netw
 - **17 themes**: Dark+, Light+, Monokai, Dracula, Nord, Solarized (dark and light), Tokyo Night, One Dark, GitHub (dark and light), Catppuccin Mocha, Gruvbox (dark and light), Rosé Pine, Midnight and Paper
 - **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom
+- **Update button**: press it to check GitHub for a newer release; only then does it download anything. It replaces the exe in the same place and restarts, so your shortcut, text file setting and notes stay exactly as they are
 - **Settings**: theme, font size, word wrap, line numbers, what new notes start as, desktop shortcut and text file handling
+- **Deleted files are noticed**: if a file you have open is deleted elsewhere, Scrawl asks whether to restore it from the note or close the note
+- **Code is recognised**: a file that looks like code opens as a Code note the first time you open it, instead of Notepad
 - **Opens files like a notepad**: open a file (`Ctrl+O`, or double-click a `.txt` once Scrawl is set up for text files in Settings) and every edit is saved back to that file automatically, in its own encoding and line endings. Only one Scrawl runs at a time, and opening a file brings it to the front (restoring it if it was minimized)
 - Rounded window with macOS style buttons, a notes list that slides away (`Ctrl+B`), search, pinning, automatic saving
 - Export notes as `.txt`, `.md` or any extension, or export every note to a folder at once

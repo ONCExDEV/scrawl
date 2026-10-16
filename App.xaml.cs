@@ -22,20 +22,43 @@ public partial class App : Application
         // The smoke tests drive windows themselves; they must never get a real window of their own on someone's screen.
         if (Environment.GetEnvironmentVariable("SCRAWL_NO_WINDOW") == "1") { base.OnStartup(e); return; }
 
+        // After an update the old process starts the new exe and exits; wait for it so the single-instance check below passes.
+        var args = e.Args;
+        var restart = Array.IndexOf(args, "--after-update");
+        if (restart >= 0 && restart + 1 < args.Length)
+        {
+            if (int.TryParse(args[restart + 1], out var oldProcess)) WaitForExit(oldProcess);
+            args = args.Where((_, i) => i != restart && i != restart + 1).ToArray();
+        }
+
         _singleInstance = new Mutex(true, "Scrawl.SingleInstance" + InstanceSuffix, out var isFirst);
         if (!isFirst)
         {
-            SendToRunningInstance(e.Args);
+            SendToRunningInstance(args);
             Shutdown();
             return;
         }
 
         base.OnStartup(e);
-        var window = new MainWindow { StartupFiles = e.Args };
+        var window = new MainWindow { StartupFiles = args };
         MainWindow = window;
         window.Show();
         _ = Task.Run(Services.SystemIntegration.RefreshTextFileIcon);
+        _ = Task.Run(() => Services.Updater.CleanUp(Services.SystemIntegration.CurrentExe));
         _ = Task.Run(() => ListenForFiles(window));
+    }
+
+    private static void WaitForExit(int processId)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(processId);
+            process.WaitForExit(15000);
+        }
+        catch (ArgumentException)
+        {
+            // Already gone.
+        }
     }
 
     [DllImport("user32.dll")]

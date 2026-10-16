@@ -7,7 +7,7 @@ namespace Scrawl.Services;
 public sealed class NoteStore
 {
     /// <summary>What is written to disk. Locked notes never write their text, only the encrypted vault.</summary>
-    private sealed record Stored(Guid Id, string Title, string Content, string Language, bool IsPinned, DateTime UpdatedAt, string? LockSalt, string? Vault, string? FilePath = null);
+    private sealed record Stored(Guid Id, string Title, string Content, string Language, bool IsPinned, DateTime UpdatedAt, string? LockSalt, string? Vault, string? FilePath = null, bool OpenedFromFile = false);
 
     public static string DataDirectory => Environment.GetEnvironmentVariable("SCRAWL_DATA_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Scrawl");
 
@@ -43,7 +43,7 @@ public sealed class NoteStore
         return stored.Select(s => new Note
         {
             Id = s.Id, Title = s.Title, Content = s.LockSalt is null ? s.Content : string.Empty, Language = s.Language,
-            IsPinned = s.IsPinned, UpdatedAt = s.UpdatedAt, Vault = s.Vault, LockSalt = s.LockSalt, FilePath = s.FilePath
+            IsPinned = s.IsPinned, UpdatedAt = s.UpdatedAt, Vault = s.Vault, LockSalt = s.LockSalt, FilePath = s.FilePath, OpenedFromFile = s.OpenedFromFile
         }).ToList();
     }
 
@@ -54,7 +54,7 @@ public sealed class NoteStore
         foreach (var note in notes)
         {
             if (note.IsLocked && note.Key is not null) note.Vault = NoteLock.Encrypt(note.Content, note.Key);
-            stored.Add(new Stored(note.Id, note.Title, note.IsLocked ? string.Empty : note.Content, note.Language, note.IsPinned, note.UpdatedAt, note.LockSalt, note.IsLocked ? note.Vault : null, note.FilePath));
+            stored.Add(new Stored(note.Id, note.Title, note.IsLocked ? string.Empty : note.Content, note.Language, note.IsPinned, note.UpdatedAt, note.LockSalt, note.IsLocked ? note.Vault : null, note.FilePath, note.OpenedFromFile));
         }
         return stored;
     }

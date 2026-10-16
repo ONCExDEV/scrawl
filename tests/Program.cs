@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using Scrawl.Controls;
@@ -103,7 +104,10 @@ internal static class Program
 
             File.Delete(textFile);
             fileNote.Content = "text after the file was deleted";
-            Assert(linked.Flush([fileNote]) is not null && fileNote.FilePath is null && !File.Exists(textFile), "a file deleted elsewhere is not recreated; the note is unlinked");
+            Assert(linked.Flush([fileNote]) is null && !File.Exists(textFile), "a file deleted elsewhere is not recreated by auto-save");
+            Assert(linked.Missing([fileNote]).Contains(fileNote) && fileNote.FilePath == textFile, "the note stays linked and is reported as missing, so the user can decide");
+            linked.Restore(fileNote);
+            Assert(File.ReadAllText(textFile) == "text after the file was deleted" && !linked.Missing([fileNote]).Any(), "restoring writes the note's text back to the deleted file");
             Console.WriteLine("PASS: notes opened from a file are saved back to that file");
 
             // The whole flow through the real window, without ever showing it: open a file, edit it in the pane, save, reopen.
@@ -149,11 +153,121 @@ internal static class Program
             Pump((Task)typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!.Invoke(window, [new[] { todoFile }])!);
             Assert(allNotes.Count == noteCount && todo.FilePath == todoFile, "a file that matches an existing note by name and text is adopted by that note");
             Console.WriteLine("PASS: downloading and reopening never creates duplicate notes");
+
+            // A new file that looks like code opens as a Code note; plain text stays Notepad; reopening keeps the choice.
+            var codeFile = Path.Combine(downloads, "program.txt");
+            File.WriteAllText(codeFile, "using System;\r\nnamespace Demo;\r\npublic class Greeter { }\r\n");
+            var proseFile = Path.Combine(downloads, "letter.txt");
+            File.WriteAllText(proseFile, "Dear Sam,\r\nthanks for the lovely evening, it was great to see you again.\r\n");
+            var importPaths = typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!;
+            Pump((Task)importPaths.Invoke(window, [new[] { codeFile, proseFile }])!);
+            var codeNote = allNotes.Single(n => n.FilePath == codeFile);
+            var proseNote = allNotes.Single(n => n.FilePath == proseFile);
+            Assert(codeNote.Language == "csharp" && codeNote.OpenedFromFile, "a new code file opens as a Code note");
+            Assert(proseNote.Language == "text", "a new text file stays a Notepad note");
+            codeNote.Language = "text";
+            Pump((Task)importPaths.Invoke(window, [new[] { codeFile }])!);
+            Assert(codeNote.Language == "text", "reopening a file does not change the type the user chose");
+            Console.WriteLine("PASS: code files are detected when they are opened for the first time");
+
+            // A file deleted while its note is open: the window must ask instead of silently keeping text for a file that is gone.
+            var checkMissing = typeof(MainWindow).GetMethod("CheckMissingFilesAsync", nonPublic)!;
+            void Click(string handler) => typeof(MainWindow).GetMethod(handler, nonPublic)!.Invoke(window, [null, new System.Windows.RoutedEventArgs()]);
+            window.WelcomeLayer.Visibility = System.Windows.Visibility.Collapsed;   // the first-run welcome is showing in this fresh window; questions wait until it is dismissed
+            var gonePath = Path.Combine(downloads, "gone.txt");
+            File.WriteAllText(gonePath, "text of a file that is about to be deleted");
+            Pump((Task)importPaths.Invoke(window, [new[] { gonePath }])!);
+            var goneNote = allNotes.Single(n => n.FilePath == gonePath);
+            File.Delete(gonePath);
+            var asking = (Task)checkMissing.Invoke(window, null)!;
+            Assert(window.DialogLayer.Visibility == System.Windows.Visibility.Visible && window.DialogText.Text.Contains("deleted from disk"), "deleting an open file makes Scrawl ask what to do");
+            Assert(window.DialogCancel.Content as string == "Close note" && window.DialogOk.Content as string == "Restore file", "the choices are restoring the file or closing the note");
+            Click("DialogCancel_Click");       // Close note
+            Pump(asking);
+            Assert(!allNotes.Contains(goneNote), "closing the note of a deleted file removes it from Scrawl");
+
+            var backPath = Path.Combine(downloads, "undo-me.txt");
+            File.WriteAllText(backPath, "bring me back");
+            Pump((Task)importPaths.Invoke(window, [new[] { backPath }])!);
+            var backNote = allNotes.Single(n => n.FilePath == backPath);
+            File.Delete(backPath);
+            asking = (Task)checkMissing.Invoke(window, null)!;
+            Click("DialogOk_Click");           // Restore file
+            Pump(asking);
+            Assert(File.Exists(backPath) && File.ReadAllText(backPath) == "bring me back" && allNotes.Contains(backNote), "undoing the deletion brings the file back from the note and keeps the note");
+
+            var ownNote = new Note { Title = "own", Content = "an app note that was downloaded", FilePath = Path.Combine(downloads, "own.txt") };   // exported earlier: not created from a file
+            File.WriteAllText(ownNote.FilePath, ownNote.Content);
+            addNote.Invoke(window, [ownNote]);
+            File.Delete(ownNote.FilePath);
+            asking = (Task)checkMissing.Invoke(window, null)!;
+            Assert(window.DialogCancel.Content as string == "Keep note", "a note that was only exported can be kept without its file");
+            Click("DialogCancel_Click");
+            Pump(asking);
+            Assert(allNotes.Contains(ownNote) && ownNote.FilePath is null && ownNote.Content == "an app note that was downloaded", "keeping the note unlinks it and loses nothing");
+            Console.WriteLine("PASS: deleting a file that is open asks to restore it or close the note");
+
+            // Updates: a fake GitHub, so no network is used. Newer release found, right asset chosen, download verified, exe swapped in place.
+            SynchronizationContext.SetSynchronizationContext(null);   // these tests wait on tasks; with the dispatcher context they would wait on themselves
+            var exeBytes = new byte[2048];
+            exeBytes[0] = (byte)'M'; exeBytes[1] = (byte)'Z';
+            var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(exeBytes)).ToLowerInvariant();
+            string Release(string tag, string digest) => "{\"tag_name\":\"" + tag + "\",\"assets\":["
+                + "{\"name\":\"Scrawl.exe\",\"size\":2048,\"digest\":\"sha256:" + digest + "\",\"browser_download_url\":\"https://github.com/ONCExDEV/scrawl/releases/download/" + tag + "/Scrawl.exe\"},"
+                + "{\"name\":\"Scrawl-standalone.exe\",\"size\":99,\"browser_download_url\":\"https://github.com/ONCExDEV/scrawl/releases/download/" + tag + "/Scrawl-standalone.exe\"}]}";
+            var fake = new FakeGitHub { Json = Release("v9.9.9", sha), Bytes = exeBytes };
+            var updater = new Updater(new HttpClient(fake));
+            Assert(Updater.Current >= new Version(1, 0, 8), "the running app knows its own version");
+            Assert(await_(updater.CheckAsync(false, new Version(9, 9, 9))) is null, "no update is offered when the latest release is the version you have");
+            Assert(await_(updater.CheckAsync(false, new Version(9, 9, 10))) is null, "no update is offered when you are ahead of the latest release");
+            var found = await_(updater.CheckAsync(false, new Version(1, 0, 8)));
+            Assert(found is { AssetName: "Scrawl.exe", Size: 2048 } && found.Version == new Version(9, 9, 9), "a newer release is found and the small exe is chosen");
+            Assert(await_(updater.CheckAsync(true, new Version(1, 0, 8)))?.AssetName == "Scrawl-standalone.exe", "the standalone exe is chosen for a standalone install");
+            var downloaded = Path.Combine(dataDirectory, "Scrawl.exe.download");
+            await_(updater.DownloadAsync(found!, downloaded));
+            Assert(File.ReadAllBytes(downloaded).SequenceEqual(exeBytes), "the download is saved");
+            var installed = Path.Combine(dataDirectory, "Scrawl-installed.exe");
+            File.WriteAllBytes(installed, [(byte)'M', (byte)'Z', 1, 1]);
+            Updater.Replace(downloaded, installed);
+            Assert(File.ReadAllBytes(installed).SequenceEqual(exeBytes) && File.Exists(installed + ".old") && !File.Exists(downloaded), "the new exe takes the old one's place and the old one is kept as .old");
+            Updater.CleanUp(installed);
+            Assert(!File.Exists(installed + ".old"), "leftovers are cleaned up on the next start");
+
+            fake.Json = Release("v9.9.9", new string('0', 64));
+            var wrongChecksum = await_(updater.CheckAsync(false, new Version(1, 0, 8)))!;
+            var rejected = Path.Combine(dataDirectory, "rejected.download");
+            var checksumRejected = false;
+            try { await_(updater.DownloadAsync(wrongChecksum, rejected)); } catch (InvalidDataException) { checksumRejected = true; }
+            Assert(checksumRejected && !File.Exists(rejected), "a download that does not match GitHub's checksum is rejected and removed");
+            var notGitHub = new UpdateInfo(new Version(9, 9, 9), "v9.9.9", "Scrawl.exe", new Uri("https://example.com/Scrawl.exe"), 2048, null);
+            var hostRejected = false;
+            try { await_(updater.DownloadAsync(notGitHub, rejected)); } catch (InvalidOperationException) { hostRejected = true; }
+            Assert(hostRejected && fake.Requests.All(r => r.Host != "example.com"), "downloads from outside GitHub are refused before any request is made");
+            Console.WriteLine("PASS: updates are checked, verified and installed in place");
         }
         finally
         {
             if (Directory.Exists(dataDirectory)) Directory.Delete(dataDirectory, recursive: true);
             GC.KeepAlive(app);
+        }
+    }
+
+    /// <summary>Runs a task to the end on this thread and returns its result.</summary>
+    private static T await_<T>(Task<T> task) => task.GetAwaiter().GetResult();
+    private static void await_(Task task) => task.GetAwaiter().GetResult();
+
+    /// <summary>Stands in for GitHub: answers the release query and the file download from memory.</summary>
+    private sealed class FakeGitHub : HttpMessageHandler
+    {
+        public string Json = "{}";
+        public byte[] Bytes = [];
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri!);
+            HttpContent content = request.RequestUri!.AbsolutePath.EndsWith("/latest") ? new StringContent(Json) : new ByteArrayContent(Bytes);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = content, RequestMessage = request });
         }
     }
 

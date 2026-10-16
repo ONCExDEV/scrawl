@@ -12,6 +12,7 @@ public sealed class Note : INotifyPropertyChanged
     private string _language = "text";
     private string? _lockSalt;
     private string? _filePath;
+    private bool _openedFromFile;
     private byte[]? _key;
     private DateTime _updatedAt = DateTime.Now;
 
@@ -29,6 +30,9 @@ public sealed class Note : INotifyPropertyChanged
     public string? FilePath { get => _filePath; set { if (Set(ref _filePath, value)) Raise(nameof(IsLinked)); } }
 
     [JsonIgnore] public bool IsLinked => _filePath is not null;
+
+    /// <summary>True when the note was created by opening a file (so it stands for that file), not when an existing note was exported.</summary>
+    public bool OpenedFromFile { get => _openedFromFile; set => Set(ref _openedFromFile, value); }
 
     /// <summary>The encrypted text of a password protected note.</summary>
     public string? Vault { get; set; }
