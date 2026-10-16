@@ -28,7 +28,7 @@ It is a single ~1 MB executable. No installer, no account, no telemetry, no netw
 - **Code notes**: syntax colors for C#, JavaScript, TypeScript, Python, Java, C/C++, Go, Rust, JSON, HTML/XML, CSS, SQL and shell. Paste code into a notepad note and the language is detected for you
 - **Up to four notes side by side**: drag a note from the list onto the editor and drop it on a tile. Drag the dividers to resize
 - **Password locked notes**: encrypted on disk (AES-256-GCM) and blurred until you enter the password. Deleting a locked note asks for it too
-- **One-click download**: saves the note as `.txt` in your Downloads folder. Hover the button to export with any extension you type
+- **One-click download**: saves the note as `.txt` in your Downloads folder and keeps the note linked to that file, so opening the file later shows the same note and downloading again updates it. Hover the button to export with any extension you type
 - **17 themes**: Dark+, Light+, Monokai, Dracula, Nord, Solarized (dark and light), Tokyo Night, One Dark, GitHub (dark and light), Catppuccin Mocha, Gruvbox (dark and light), Rosé Pine, Midnight and Paper
 - **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom

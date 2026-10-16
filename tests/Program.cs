@@ -119,10 +119,38 @@ internal static class Program
             Pump((Task)typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!.Invoke(window, [new[] { flowFile }])!);
             Assert(panes.Count == 1 && panes[0].Editor.Text == "changed by another program", "reopening the file shows its current text instead of an old copy");
             Console.WriteLine("PASS: open a file, edit it, auto-save and reopen all work through the window");
+
+            // Download, then open the downloaded file: it must stay the same note, never a second copy.
+            var downloads = Path.Combine(dataDirectory, "downloads");
+            Environment.SetEnvironmentVariable("SCRAWL_DOWNLOADS_DIR", downloads);
+            var allNotes = (System.Collections.ObjectModel.ObservableCollection<Note>)typeof(MainWindow).GetField("_notes", nonPublic)!.GetValue(window)!;
+            var quickExport = typeof(MainWindow).GetMethod("QuickExport", nonPublic)!;
+            var addNote = typeof(MainWindow).GetMethod("Add", nonPublic)!;
+            var shopping = new Note { Title = "Shopping", Content = "milk\neggs" };
+            addNote.Invoke(window, [shopping]);
+            quickExport.Invoke(window, [shopping, ".txt"]);
+            var shoppingFile = Path.Combine(downloads, "Shopping.txt");
+            Assert(File.Exists(shoppingFile) && shopping.FilePath == shoppingFile, "downloading a note links it to the downloaded file");
+            shopping.Content = "milk\neggs\nbread";
+            quickExport.Invoke(window, [shopping, ".txt"]);
+            Assert(Directory.GetFiles(downloads).Length == 1 && File.ReadAllText(shoppingFile) == "milk\r\neggs\r\nbread", "downloading again updates the same file instead of making 'Shopping (2).txt'");
+            var noteCount = allNotes.Count;
+            Pump((Task)typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!.Invoke(window, [new[] { shoppingFile }])!);
+            Assert(allNotes.Count == noteCount, "opening the downloaded file does not add a second note");
+
+            var todo = new Note { Title = "Todo", Content = "one\ntwo" };   // exported by an older version: same name and text, no link
+            addNote.Invoke(window, [todo]);
+            var todoFile = Path.Combine(downloads, "Todo.txt");
+            File.WriteAllText(todoFile, "one\r\ntwo");
+            noteCount = allNotes.Count;
+            Pump((Task)typeof(MainWindow).GetMethod("ImportPathsAsync", nonPublic)!.Invoke(window, [new[] { todoFile }])!);
+            Assert(allNotes.Count == noteCount && todo.FilePath == todoFile, "a file that matches an existing note by name and text is adopted by that note");
+            Console.WriteLine("PASS: downloading and reopening never creates duplicate notes");
         }
         finally
         {
             if (Directory.Exists(dataDirectory)) Directory.Delete(dataDirectory, recursive: true);
+            GC.KeepAlive(app);
         }
     }
 

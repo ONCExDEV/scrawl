@@ -81,7 +81,7 @@
                                                            Visibility="{Binding IsPinned, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock DockPanel.Dock="Right" Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="6,2,0,0"
                                                            Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}"/>
-                                                <TextBlock DockPanel.Dock="Right" Text="&#xE71B;" FontFamily="{StaticResource Icons}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="6,2,0,0" ToolTip="Linked to a file"
+                                                <TextBlock DockPanel.Dock="Right" Text="&#xE71B;" FontFamily="{StaticResource Icons}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="6,2,0,0" ToolTip="{Binding FilePath}"
                                                            Visibility="{Binding IsLinked, Converter={StaticResource BoolToVis}}"/>
                                                 <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                             </DockPanel>

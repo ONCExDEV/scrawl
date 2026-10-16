@@ -701,19 +701,40 @@ public partial class MainWindow : Window
         return cleaned.Length == 0 ? ".txt" : "." + cleaned;
     }
 
-    /// <summary>Saves the note straight into the Downloads folder, no dialog.</summary>
+    internal static string DownloadsFolder => Environment.GetEnvironmentVariable("SCRAWL_DOWNLOADS_DIR")
+        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+    /// <summary>Connects a note to a file, so later edits are saved to it and opening that file shows this note.</summary>
+    private void LinkToFile(Note note, string path)
+    {
+        note.FilePath = Path.GetFullPath(path);
+        _files.Track(note, LinkedFiles.Read(note.FilePath));
+        QueueSave();
+    }
+
+    /// <summary>
+    /// Saves the note straight into the Downloads folder, no dialog.
+    /// A note that already follows a file of that type just updates that file instead of creating "name (2).txt".
+    /// A note that follows no file is linked to the new file, so opening it again shows the same note.
+    /// </summary>
     private void QuickExport(Note note, string? extension)
     {
         if (!Readable(note)) { _ = Info("Note is locked", "Unlock the note first."); return; }
         try
         {
             extension = NormalizeExtension(extension);
-            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            if (note.FilePath is { } linkedPath && string.Equals(Path.GetExtension(linkedPath), extension, StringComparison.OrdinalIgnoreCase))
+            {
+                SavedLabel.Text = _files.Flush([note]) ?? $"Saved to {Path.GetFileName(linkedPath)}";
+                return;
+            }
+            var folder = DownloadsFolder;
             Directory.CreateDirectory(folder);
             var name = MakeSafeFileName(note.Title);
             var path = Path.Combine(folder, name + extension);
             for (var n = 2; File.Exists(path); n++) path = Path.Combine(folder, $"{name} ({n}){extension}");
             File.WriteAllText(path, ToFileText(note));
+            if (!note.IsLinked) LinkToFile(note, path);
             SavedLabel.Text = $"Saved to Downloads: {Path.GetFileName(path)}";
         }
         catch (Exception ex)
@@ -736,6 +757,8 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog(this) != true) return;
         File.WriteAllText(dialog.FileName, ToFileText(note));
+        if (!note.IsLinked) LinkToFile(note, dialog.FileName);
+        else if (string.Equals(note.FilePath, Path.GetFullPath(dialog.FileName), StringComparison.OrdinalIgnoreCase)) _files.Track(note, LinkedFiles.Read(note.FilePath!));
         SavedLabel.Text = "Exported";
     }
 
@@ -834,7 +857,10 @@ public partial class MainWindow : Window
                 if (!File.Exists(path)) continue;
                 var full = Path.GetFullPath(path);
                 var snapshot = LinkedFiles.Read(full);
-                var existing = _notes.FirstOrDefault(n => string.Equals(n.FilePath, full, StringComparison.OrdinalIgnoreCase) && Readable(n));
+                var existing = _notes.FirstOrDefault(n => string.Equals(n.FilePath, full, StringComparison.OrdinalIgnoreCase) && Readable(n))
+                    // A note exported earlier (before notes were linked on export) has the file's name and text: adopt it instead of adding a twin.
+                    ?? _notes.FirstOrDefault(n => !n.IsLinked && Readable(n) && n.Title == Path.GetFileNameWithoutExtension(full) && n.Content == snapshot.Text);
+                if (existing is not null && !existing.IsLinked) existing.FilePath = full;
                 if (existing is not null)
                 {
                     if (existing.Content != snapshot.Text) { existing.Content = snapshot.Text; RefreshPanesFor(existing); }
