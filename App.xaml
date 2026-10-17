@@ -143,15 +143,28 @@
             <Setter Property="Width" Value="16" />
             <Setter Property="Height" Value="16" />
             <Setter Property="Margin" Value="5,0" />
+            <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Grid Background="Transparent">
                             <Ellipse Fill="{TemplateBinding Tag}" />
+                            <!-- Slides over the dot: a darker shade fades in under the mouse, a little more while pressed -->
+                            <Ellipse x:Name="Shade" Fill="Black" Opacity="0" />
+                            <Ellipse x:Name="PressShade" Fill="Black" Opacity="0" />
                             <Ellipse Stroke="#40000000" StrokeThickness="0.6" />
-                            
                         </Grid>
-                        
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0.22" Duration="0:0:0.16" /></Storyboard></BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard><Storyboard><DoubleAnimation Storyboard.TargetName="Shade" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.2" /></Storyboard></BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True"><Setter TargetName="PressShade" Property="Opacity" Value="0.15" /></Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>

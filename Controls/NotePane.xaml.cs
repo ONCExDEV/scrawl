@@ -33,6 +33,13 @@ public partial class NotePane : UserControl
             Edited?.Invoke(this);
         };
         Editor.TextArea.Caret.PositionChanged += (_, _) => CaretMoved?.Invoke(this);
+        // Right-click in the note (text or empty space) asks the window for the editing menu. The title and password boxes keep their own menu.
+        PreviewMouseRightButtonUp += (_, e) =>
+        {
+            if (IsShowingLock || IsInsideTextBox(e.OriginalSource as DependencyObject)) return;
+            e.Handled = true;
+            ContextRequested?.Invoke(this);
+        };
         DataObject.AddPastingHandler(Editor.TextArea, (_, e) =>
         {
             if (e.DataObject.GetData(DataFormats.UnicodeText) is string text) Dispatcher.BeginInvoke(() => Pasted?.Invoke(this, text));
@@ -49,6 +56,7 @@ public partial class NotePane : UserControl
     public event Action<NotePane>? Unlocked;
     public event Action<NotePane, int>? ZoomRequested;
     public event Action<NotePane, string>? Pasted;
+    public event Action<NotePane>? ContextRequested;
 
     public bool IsShowingLock => LockLayer.Visibility == Visibility.Visible;
     public bool IsCode => (Note?.Language ?? "text") != "text";
@@ -179,6 +187,16 @@ public partial class NotePane : UserControl
         area.TextView.CurrentLineBackground = Themes.Get("CurLine");
         area.TextView.CurrentLineBorder = new Pen(Brushes.Transparent, 0);
         Editor.TextArea.TextView.Redraw();
+    }
+
+    private static bool IsInsideTextBox(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is TextBox or PasswordBox) return true;
+            element = element is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(element) : LogicalTreeHelper.GetParent(element);
+        }
+        return false;
     }
 
     public void FocusEditor() => Editor.Focus();

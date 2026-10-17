@@ -32,7 +32,8 @@ It is a single ~1 MB executable. No installer, no account, no telemetry. Scrawl 
 - **Automatic saving can be turned off** in Settings: then notes are only saved when you press `Ctrl+S`, and closing with unsaved changes asks first
 - **One-click download**: saves the note as `.txt` in your Downloads folder and keeps the note linked to that file, so opening the file later shows the same note and downloading again updates it. Hover the button to export with any extension you type
 - **17 themes**: Dark+, Light+, Monokai, Dracula, Nord, Solarized (dark and light), Tokyo Night, One Dark, GitHub (dark and light), Catppuccin Mocha, Gruvbox (dark and light), Rosé Pine, Midnight and Paper
-- **Right-click menu** on notes: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
+- **Right-click menu** on notes in the list: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
+- **Right-click inside a note** (on the text or the empty space) for the editing menu: undo, redo, cut, copy, paste, select all and the text tools
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom
 - **Update button**: appears (top right) only when GitHub has a newer release, checked once at startup. Pressing it downloads that release, and nothing is downloaded before that. It replaces the exe in the same place and restarts, so your shortcut, text file setting and notes stay exactly as they are
 - **Settings**: theme, font size, word wrap, line numbers, what new notes start as, desktop shortcut and text file handling

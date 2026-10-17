@@ -332,6 +332,39 @@ internal static class Program
             timer.Stop();
             Console.WriteLine("PASS: automatic saving can be turned off and Ctrl+S saves");
 
+            // The three window buttons: hand cursor, and a shade that fades in under the mouse.
+            var trafficStyle = (System.Windows.Style)app.Resources["Traffic"];
+            var dot = new System.Windows.Controls.Button { Style = trafficStyle, Tag = System.Windows.Media.Brushes.Orange };
+            dot.ApplyTemplate();
+            Assert(dot.Cursor == System.Windows.Input.Cursors.Hand, "the window buttons show a hand cursor");
+            Assert(dot.Template.FindName("Shade", dot) is System.Windows.Shapes.Ellipse { Opacity: 0 }, "the window buttons have a shade that is invisible at rest");
+            var hover = dot.Template.Triggers.OfType<System.Windows.Trigger>().FirstOrDefault(t => t.Property == System.Windows.UIElement.IsMouseOverProperty);
+            Assert(hover is { EnterActions.Count: 1, ExitActions.Count: 1 }, "the shade fades in when the mouse comes over a window button and out when it leaves");
+            Console.WriteLine("PASS: the window buttons get a hand cursor and darken under the mouse");
+
+            // Right-click in a note (text or empty space) asks for the editing menu; the title box and a locked note do not.
+            var contextLabels = window.EditorContextLabels();
+            foreach (var wanted in new[] { "Undo", "Redo", "Cut", "Copy", "Paste", "Select all", "Insert date and time", "UPPERCASE", "Sort lines A–Z", "Copy whole note" })
+                Assert(contextLabels.Contains(wanted), $"the right-click menu of a note offers {wanted}");
+            var lone = new NotePane();
+            lone.Load(new Note { Title = "Right click", Content = "text" });
+            var asked = 0;
+            lone.ContextRequested += _ => asked++;
+            void RightClick(System.Windows.UIElement source) => lone.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, System.Windows.Input.MouseButton.Right) { RoutedEvent = System.Windows.UIElement.PreviewMouseRightButtonUpEvent, Source = source });
+            RightClick(lone.Editor);
+            Assert(asked == 1, "right-clicking in the editor asks for the menu");
+            RightClick(lone.TitleBox);
+            Assert(asked == 1, "the title box keeps its own right-click menu");
+            var secretPane = new NotePane();
+            var secretNote = new Note { Title = "Secret", Content = "x" };
+            NoteLock.Lock(secretNote, "pw1234");
+            secretPane.Load(secretNote);
+            var askedLocked = 0;
+            secretPane.ContextRequested += _ => askedLocked++;
+            secretPane.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, Environment.TickCount, System.Windows.Input.MouseButton.Right) { RoutedEvent = System.Windows.UIElement.PreviewMouseRightButtonUpEvent, Source = secretPane.Editor });
+            Assert(askedLocked == 0, "a locked note shows no editing menu");
+            Console.WriteLine("PASS: right-clicking a note opens the editing menu");
+
             // Updates: a fake GitHub, so no network is used. Newer release found, right asset chosen, download verified, exe swapped in place.
             SynchronizationContext.SetSynchronizationContext(null);   // these tests wait on tasks; with the dispatcher context they would wait on themselves
             var exeBytes = new byte[2048];

@@ -274,12 +274,39 @@ public partial class MainWindow : Window
         pane.CaretMoved += p => { if (p == _active) UpdateCursor(); };
         pane.ZoomRequested += (_, delta) => Zoom(delta);
         pane.Pasted += OnPasting;
+        pane.ContextRequested += ShowEditorContextMenu;
         pane.Unlocked += _ => { UpdateStats(); RefreshToolbar(); };
         pane.Load(note);
         _panes.Add(pane);
         ApplyLayout();
         SetActive(pane);
         return pane;
+    }
+
+    /// <summary>The menu of a right-click in a note: the Edit menu (undo, cut, copy, paste, text tools) plus copying the whole note.</summary>
+    private List<Entry> EditorContextEntries()
+    {
+        var entries = EditMenu();
+        entries.Add(new(null));
+        entries.Add(new("Copy whole note", null, () => { if (ActiveNote is { } note) CopyNote(note); }));
+        return entries;
+    }
+
+    /// <summary>Names in the right-click menu of a note (for the tests).</summary>
+    internal List<string> EditorContextLabels() => EditorContextEntries().Where(e => e.Label is not null).Select(e => e.Label!).ToList();
+
+    private void ShowEditorContextMenu(NotePane pane)
+    {
+        SetActive(pane);
+        ShowMenu(pane, EditorContextEntries(), PlacementMode.MousePoint);
+    }
+
+    /// <summary>Right-click on the empty main area (no note open): the basics.</summary>
+    private void Main_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (_panes.Count > 0) return;
+        ShowMenu(EmptyState, [new("New note", "Ctrl+N", NewNote), new("Open file…", "Ctrl+O", () => _ = ImportAsync())], PlacementMode.MousePoint);
+        e.Handled = true;
     }
 
     private void RemovePane(NotePane pane)

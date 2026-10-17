@@ -110,7 +110,7 @@
                     </Grid>
 
                     <!-- Main -->
-                    <Grid Grid.Row="1" Grid.Column="1">
+                    <Grid Grid.Row="1" Grid.Column="1" Background="Transparent" MouseRightButtonUp="Main_RightClick">
                         <Grid x:Name="EditorLayout" Visibility="Collapsed">
                             <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="26"/></Grid.RowDefinitions>
 
