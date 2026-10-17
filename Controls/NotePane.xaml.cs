@@ -23,6 +23,7 @@ public partial class NotePane : UserControl
     {
         InitializeComponent();
         Editor.TextArea.TextView.LineTransformers.Add(_colorizer);
+        Editor.TextArea.TextView.ElementGenerators.Add(new ColorEmojiGenerator(() => Editor.FontSize, () => (Themes.Get("Text") as SolidColorBrush)?.Color ?? Colors.White));
         Editor.Options.EnableHyperlinks = false;
         Editor.Options.EnableEmailHyperlinks = false;
         Editor.TextChanged += (_, _) =>
@@ -66,6 +67,7 @@ public partial class NotePane : UserControl
         _loading = true;
         Note = note;
         TitleBox.Text = note.Title;
+        UpdateTitleView();
         var locked = note.IsLocked && !note.IsUnlocked;
         if (locked) ShowLock(); else HideLock();
         Editor.Document = new TextDocument(locked ? Decoy() : note.Content);
@@ -179,6 +181,7 @@ public partial class NotePane : UserControl
 
     public void ApplyTheme()
     {
+        UpdateTitleView();
         var area = Editor.TextArea;
         area.Caret.CaretBrush = Themes.Get("Text");
         area.SelectionBrush = Themes.Get("Sel");
@@ -202,8 +205,24 @@ public partial class NotePane : UserControl
     public void FocusEditor() => Editor.Focus();
     public void FocusTitle() { TitleBox.Focus(); TitleBox.SelectAll(); }
 
+    /// <summary>WPF can't draw color emoji in a text box: while the title is not being edited, a copy with colored emoji is shown over it.</summary>
+    private void UpdateTitleView()
+    {
+        var show = !TitleBox.IsKeyboardFocused && ColorEmoji.IsAvailable && ColorEmoji.Contains(TitleBox.Text);
+        if (show)
+        {
+            EmojiText.SetText(TitleEmoji, string.Empty);   // forces a redraw, so a new theme color is picked up
+            EmojiText.SetText(TitleEmoji, TitleBox.Text);
+        }
+        TitleEmoji.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show) TitleBox.Foreground = Brushes.Transparent; else TitleBox.ClearValue(Control.ForegroundProperty);
+    }
+
+    private void TitleBox_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => UpdateTitleView();
+
     private void TitleBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        UpdateTitleView();
         if (_loading || Note is null) return;
         Note.Title = TitleBox.Text;
         Note.UpdatedAt = DateTime.Now;

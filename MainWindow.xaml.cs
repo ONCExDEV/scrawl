@@ -1384,8 +1384,8 @@ public partial class MainWindow : Window
         _dialog?.TrySetResult(false);
         _dialog = new TaskCompletionSource<bool>();
         _dialogValidator = validate;
-        DialogTitle.Text = title;
-        DialogText.Text = message;
+        EmojiText.SetText(DialogTitle, title);
+        EmojiText.SetText(DialogText, message);
         DialogOk.Content = ok;
         DialogCancel.Content = cancelText;
         _dialogRequiresChoice = requireChoice;
@@ -1697,6 +1697,7 @@ public partial class MainWindow : Window
         _settings.Save();
         Themes.Apply(theme);
         foreach (var pane in _panes) pane.ApplyTheme();
+        _notesView?.Refresh();   // list items are drawn again, so emoji pick up the new text color
         UpdatePinIcon();
     }
 

@@ -365,6 +365,47 @@ internal static class Program
             Assert(askedLocked == 0, "a locked note shows no editing menu");
             Console.WriteLine("PASS: right-clicking a note opens the editing menu");
 
+            // Emoji in color: found in text, drawn by DirectWrite, shown in the editor, the notes list and the title.
+            Assert(ColorEmoji.IsAvailable, "Windows can draw color emoji here");
+            Assert(ColorEmoji.Find("a\U0001F600b") is { Index: 1, Length: 2 }, "an emoji is found in text");
+            Assert(ColorEmoji.Find("x\U0001F468\u200D\U0001F469\u200D\U0001F467y") is { Index: 1, Length: 8 }, "a family is one emoji, not three");
+            Assert(ColorEmoji.Find("\U0001F1F3\U0001F1F1") is { Index: 0, Length: 4 }, "a flag is one emoji");
+            Assert(ColorEmoji.Find("\U0001F44D\U0001F3FD") is { Index: 0, Length: 4 }, "a skin tone belongs to its emoji");
+            Assert(ColorEmoji.Find("1\uFE0F\u20E3") is { Index: 0, Length: 3 }, "a keycap is one emoji");
+            Assert(ColorEmoji.Find("plain text 123 #* \u2764") is null && ColorEmoji.Find("\u2764\uFE0F") is { Length: 2 } && ColorEmoji.Find("\u2705") is { Length: 1 }, "ordinary characters are no emoji, hearts need their emoji marker");
+            Assert(ColorEmoji.Find("a\uD83D") is null && ColorEmoji.Find("\uDE00") is null, "half of an emoji (a cut-off text) is no problem");
+            Assert(ColorEmoji.Find("\U0001F600x\U0001F600", 2) is { Index: 3, Length: 2 }, "searching from a position gives positions in the whole text");
+            static bool Any(System.Windows.Media.Imaging.BitmapSource source, Func<byte, byte, byte, byte, bool> test)
+            {
+                var bytes = new byte[source.PixelWidth * source.PixelHeight * 4];
+                source.CopyPixels(bytes, source.PixelWidth * 4, 0);
+                for (var i = 0; i < bytes.Length; i += 4) if (test(bytes[i + 2], bytes[i + 1], bytes[i], bytes[i + 3])) return true;
+                return false;
+            }
+            var smile = ColorEmoji.Render("\U0001F600", 14, 1.0, System.Windows.Media.Colors.White);
+            Assert(smile is not null && smile.Width > 8 && Any(smile.Source, (r, g, b, a) => a > 200 && Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b)) > 80), "an emoji is drawn with real colors");
+            var flag = ColorEmoji.Render("\U0001F1F3\U0001F1F1", 14, 1.0, System.Windows.Media.Colors.White);
+            Assert(flag is not null && Any(flag.Source, (r, g, b, a) => a > 128 && r > 200 && g > 200 && b > 200), "symbols without color are drawn in the text color, so they show up on a dark theme");
+            var emojiPane = new NotePane();
+            emojiPane.Load(new Note { Title = "Party \U0001F389", Content = "a \U0001F600 b \U0001F389" });
+            emojiPane.Measure(new System.Windows.Size(600, 200));
+            emojiPane.Arrange(new System.Windows.Rect(0, 0, 600, 200));
+            emojiPane.UpdateLayout();
+            emojiPane.Editor.TextArea.TextView.EnsureVisualLines();
+            var emojiLine = emojiPane.Editor.TextArea.TextView.GetVisualLine(1);
+            Assert(emojiLine is not null && emojiLine.Elements.OfType<ICSharpCode.AvalonEdit.Rendering.InlineObjectElement>().Count() == 2, "the editor shows both emoji of a line as pictures");
+            Assert(emojiPane.Editor.Text == "a \U0001F600 b \U0001F389", "the note text itself is not changed");
+            Assert(emojiPane.TitleEmoji.Visibility == System.Windows.Visibility.Visible && emojiPane.TitleEmoji.Inlines.OfType<System.Windows.Documents.InlineUIContainer>().Count() == 1, "a title with an emoji is shown with a colored copy");
+            var plainTitle = new NotePane();
+            plainTitle.Load(new Note { Title = "No emoji here", Content = "x" });
+            Assert(plainTitle.TitleEmoji.Visibility == System.Windows.Visibility.Collapsed, "a title without emoji shows the normal text box");
+            var listText = new System.Windows.Controls.TextBlock { FontSize = 13 };
+            EmojiText.SetText(listText, "Hi \U0001F389 there");
+            Assert(listText.Inlines.Count == 3 && listText.Inlines.OfType<System.Windows.Documents.InlineUIContainer>().Count() == 1, "list text with an emoji gets a picture between its words");
+            EmojiText.SetText(listText, "no emoji");
+            Assert(listText.Text == "no emoji", "list text without emoji stays plain text");
+            Console.WriteLine("PASS: emoji are shown in color");
+
             // Updates: a fake GitHub, so no network is used. Newer release found, right asset chosen, download verified, exe swapped in place.
             SynchronizationContext.SetSynchronizationContext(null);   // these tests wait on tasks; with the dispatcher context they would wait on themselves
             var exeBytes = new byte[2048];

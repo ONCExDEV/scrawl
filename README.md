@@ -32,6 +32,7 @@ It is a single ~1 MB executable. No installer, no account, no telemetry. Scrawl 
 - **Automatic saving can be turned off** in Settings: then notes are only saved when you press `Ctrl+S`, and closing with unsaved changes asks first
 - **One-click download**: saves the note as `.txt` in your Downloads folder and keeps the note linked to that file, so opening the file later shows the same note and downloading again updates it. Hover the button to export with any extension you type
 - **17 themes**: Dark+, Light+, Monokai, Dracula, Nord, Solarized (dark and light), Tokyo Night, One Dark, GitHub (dark and light), Catppuccin Mocha, Gruvbox (dark and light), Rosé Pine, Midnight and Paper
+- **Emoji in full color** in your notes, the notes list and the title: skin tones, families, keycaps and all (Windows itself shows flags as two letters). Windows draws them through DirectWrite, so they look like the emoji of your Windows version
 - **Right-click menu** on notes in the list: open, open side by side, pin, rename, duplicate, copy, download, lock, delete
 - **Right-click inside a note** (on the text or the empty space) for the editing menu: undo, redo, cut, copy, paste, select all and the text tools
 - **File, Edit and View menus** with text tools: sort lines, remove duplicates, change case, insert date, duplicate or delete a line, zoom

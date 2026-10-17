@@ -112,9 +112,9 @@ public partial class PinPad : UserControl
         {
             var dot = (Ellipse)Dots.Children[i];
             var filled = i < Entered.Length || _error;
-            dot.Stroke = _error ? ErrorBrush : (Brush)FindResource("Muted");
-            dot.Fill = !filled ? Brushes.Transparent : _error ? ErrorBrush : (Brush)FindResource("Accent");
-            if (filled && !_error) dot.Stroke = (Brush)FindResource("Accent");
+            dot.Stroke = _error ? ErrorBrush : (TryFindResource("Muted") as Brush ?? Brushes.Gray);
+            dot.Fill = !filled ? Brushes.Transparent : _error ? ErrorBrush : (TryFindResource("Accent") as Brush ?? Brushes.DodgerBlue);
+            if (filled && !_error) dot.Stroke = (TryFindResource("Accent") as Brush ?? Brushes.DodgerBlue);
         }
     }
 
