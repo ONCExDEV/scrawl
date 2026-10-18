@@ -48,11 +48,12 @@ public static class Themes
             "#CF222E", "#0A3069", "#0550AE", "#6E7781", "#953800", "#8250DF", "#0550AE", "#0969DA"]),
         new("Gruvbox Light", false, ["#FBF1C7", "#EBDBB2", "#3C3836", "#928374", "#D5C4A1", "#B57614", "#FBF1C7", "#D5C4A1", "#F2E5BC", "#EBDBB2", "#D5C4A1", "#EBDBB2",
             "#9D0006", "#79740E", "#8F3F71", "#928374", "#B57614", "#427B58", "#AF3A03", "#076678"]),
-        new("Papier", false, ["#FAF7F0", "#F0EBDD", "#3B3A36", "#9A9588", "#E3DDCB", "#B5532A", "#FFFFFF", "#E6D9B8", "#F4EFE2", "#EBE5D3", "#E3DDCB", "#F0EBDD",
+        new("Paper", false, ["#FAF7F0", "#F0EBDD", "#3B3A36", "#9A9588", "#E3DDCB", "#B5532A", "#FFFFFF", "#E6D9B8", "#F4EFE2", "#EBE5D3", "#E3DDCB", "#F0EBDD",
             "#B5532A", "#4F7942", "#A0522D", "#9A9588", "#2F6F8F", "#7A4E9C", "#B5532A", "#2F6F8F"]),
     ];
 
-    public static Theme Find(string? name) => All.FirstOrDefault(t => t.Name == name) ?? All[0];
+    /// <summary>Finds a theme by name. "Papier" is what the Paper theme was called before (Dutch), so the choice of earlier versions is kept.</summary>
+    public static Theme Find(string? name) => All.FirstOrDefault(t => t.Name == (name == "Papier" ? "Paper" : name)) ?? All[0];
 
     public static void Apply(Theme theme)
     {

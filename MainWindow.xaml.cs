@@ -66,6 +66,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _settings.Theme = Themes.Find(_settings.Theme).Name;   // also turns the old name "Papier" into "Paper"
         Themes.Apply(Themes.Find(_settings.Theme));
         InitializeComponent();
         SidebarHost.Width = _settings.SidebarCollapsed ? 0 : SidebarWidth;

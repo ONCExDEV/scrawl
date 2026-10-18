@@ -41,6 +41,7 @@ internal static class Program
             Assert(CodeHighlighter.Guess("using System;\nnamespace Demo;\npublic class A { }") == "csharp", "C# is detected");
             Assert(CodeHighlighter.Guess("just a grocery list\nmilk\neggs") is null, "ordinary text is not mistaken for code");
             Assert(Themes.All.All(theme => theme.Colors.Length == Themes.Keys.Length), "every theme defines every color");
+            Assert(Themes.All.Any(t => t.Name == "Paper") && Themes.All.All(t => t.Name != "Papier") && Themes.Find("Papier").Name == "Paper" && Themes.Find("Nope").Name == Themes.All[0].Name, "the Paper theme has its English name and the old name still finds it");
             Console.WriteLine("PASS: syntax highlighting, language detection and themes");
 
             var first = new Note { Title = "First", Content = string.Join('\n', "alpha", "  beta"), Language = "csharp" };
