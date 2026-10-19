@@ -25,9 +25,20 @@
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <Image Source="Assets/logo.png" Width="20" Height="20" RenderOptions.BitmapScalingMode="HighQuality" Margin="16,0,10,0" VerticalAlignment="Center"/>
-                            <ScrollViewer x:Name="TabScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" PreviewMouseWheel="TabScroller_MouseWheel">
+                            <ScrollViewer x:Name="TabScroller" Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" PreviewMouseWheel="TabScroller_MouseWheel"
+                                  AllowDrop="True" DragOver="TabStrip_DragOver" Drop="TabStrip_Drop" DragLeave="TabStrip_DragLeave">
+                                <ScrollViewer.Template>
+                                    <ControlTemplate TargetType="ScrollViewer">
+                                        <!-- The scroll bar floats over the bottom of the tab row, so the tabs keep their height -->
+                                        <Grid>
+                                            <ScrollContentPresenter CanContentScroll="False"/>
+                                            <ScrollBar x:Name="PART_HorizontalScrollBar" Orientation="Horizontal" VerticalAlignment="Bottom" Minimum="0" Maximum="{TemplateBinding ScrollableWidth}"
+                                                       ViewportSize="{TemplateBinding ViewportWidth}" Value="{TemplateBinding HorizontalOffset}" Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"/>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ScrollViewer.Template>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
-                                    <StackPanel x:Name="TabStrip" Orientation="Horizontal"/>
+                                    <StackPanel x:Name="TabStrip" Orientation="Horizontal" PreviewMouseMove="TabStrip_PreviewMouseMove" PreviewMouseLeftButtonUp="TabStrip_PreviewMouseUp"/>
                                     <Button Click="NewNote_Click" ToolTip="New note (Ctrl+N)" Margin="4,0,0,0"><TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12"/></Button>
                                 </StackPanel>
                             </ScrollViewer>
@@ -322,6 +333,15 @@
                     </Border>
                 </Grid>
 
+                <!-- Shown for 10 seconds after a note was deleted -->
+                <Border x:Name="UndoToast" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,44" Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="12" Padding="16,8,8,8">
+                    <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.4"/></Border.Effect>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="UndoText" VerticalAlignment="Center" FontSize="13" MaxWidth="320" TextTrimming="CharacterEllipsis" Margin="0,0,14,0"/>
+                        <Button Style="{StaticResource AccentButton}" Content="Undo" Click="UndoDelete_Click" Padding="14,5" FontSize="13"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- In-app dialog -->
                 <Grid x:Name="DialogLayer" Visibility="Collapsed" Margin="0,40,0,0">
                     <Border Background="#99000000" MouseDown="DialogScrim_MouseDown"/>
@@ -340,6 +360,7 @@
                             <ctl:PinPad x:Name="DialogPad" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,0,0,8" Completed="DialogPad_Completed"/>
                             <TextBlock x:Name="DialogError" Foreground="#E5484D" FontSize="13" Visibility="Collapsed" Margin="2,0,0,12"/>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="DialogThird" Click="DialogThird_Click" Visibility="Collapsed" Content="Don't save" Padding="18,9" FontSize="14" Foreground="{DynamicResource Text}" Margin="0,0,8,0"/>
                                 <Button x:Name="DialogCancel" Click="DialogCancel_Click" Content="Cancel" Padding="18,9" FontSize="14" Foreground="{DynamicResource Text}" Margin="0,0,8,0"/>
                                 <Button x:Name="DialogOk" Click="DialogOk_Click" Style="{StaticResource AccentButton}" Content="OK" Padding="20,9" FontSize="14"/>
                             </StackPanel>

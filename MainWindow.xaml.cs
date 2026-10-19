@@ -63,6 +63,12 @@ public partial class MainWindow : Window
     private bool _pressing;
     private Note? _dragNote;
     private Point _dragOrigin;
+    private Note? _tabDragNote;
+    private Point _tabDragOrigin;
+    private bool _tabsSuppressed;
+    private bool _dialogThirdChosen;
+    private readonly Stack<Note> _deleted = new();
+    private readonly DispatcherTimer _undoTimer = new() { Interval = TimeSpan.FromSeconds(10) };
 
     public MainWindow()
     {
@@ -74,6 +80,7 @@ public partial class MainWindow : Window
 
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveAsync(); };
         _flyoutTimer.Tick += FlyoutTick;
+        _undoTimer.Tick += (_, _) => { _undoTimer.Stop(); _deleted.Clear(); UndoToast.Visibility = Visibility.Collapsed; };
         _missingTimer.Tick += async (_, _) => await CheckMissingFilesAsync();
         Activated += async (_, _) => await CheckMissingFilesAsync();
         Loaded += async (_, _) => await LoadAsync();
@@ -463,6 +470,9 @@ public partial class MainWindow : Window
     /// <summary>Order value that puts a note above all others.</summary>
     private double TopOrder() => _notes.Count == 0 ? 1 : _notes.Max(n => n.Order) + 1;
 
+    /// <summary>Order value that puts a note below all others (the last tab).</summary>
+    private double BottomOrder() => _notes.Count == 0 ? 1 : _notes.Min(n => n.Order) - 1;
+
     /// <summary>Notes from before the list could be arranged have no order yet: keep them in the order they were shown (latest edit on top).</summary>
     private void AssignFirstOrder()
     {
@@ -548,12 +558,18 @@ public partial class MainWindow : Window
     private void MoveNote(Note note, List<Note> others, int index)
     {
         // Spread the orders out first, so there is always room between two neighbours.
-        var value = others.Count + 1;
-        foreach (var other in others) other.Order = value--;
-        var above = index > 0 ? others[index - 1] : null;
-        var below = index < others.Count ? others[index] : null;
-        note.Order = above is null && below is null ? 1 : above is null ? below!.Order + 1 : below is null ? above.Order - 1 : (above.Order + below.Order) / 2;
+        _tabsSuppressed = true;
+        try
+        {
+            var value = others.Count + 1;
+            foreach (var other in others) other.Order = value--;
+            var above = index > 0 ? others[index - 1] : null;
+            var below = index < others.Count ? others[index] : null;
+            note.Order = above is null && below is null ? 1 : above is null ? below!.Order + 1 : below is null ? above.Order - 1 : (above.Order + below.Order) / 2;
+        }
+        finally { _tabsSuppressed = false; }
         _notesView?.Refresh();
+        RebuildTabs();
         if (_active?.Note is { } current) NotesList.SelectedItem = current;
         QueueSave();
     }
@@ -689,7 +705,7 @@ public partial class MainWindow : Window
     /// <summary>The tabs along the top: every note, in the order of the notes list; the open note is highlighted.</summary>
     private void RebuildTabs()
     {
-        if (!_settings.NotepadLayout) return;
+        if (!_settings.NotepadLayout || _tabsSuppressed) return;
         TabStrip.Children.Clear();
         foreach (var note in _notes.OrderByDescending(n => n.IsPinned).ThenByDescending(n => n.Order)) TabStrip.Children.Add(MakeTab(note));
         Dispatcher.BeginInvoke(() =>
@@ -713,12 +729,166 @@ public partial class MainWindow : Window
         row.Children.Add(lockIcon);
         row.Children.Add(title);
 
-        var tab = new Border { Child = row, Tag = note, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(1, 0, 1, 0), Cursor = Cursors.Hand, Background = active ? Themes.Get("Select") : Brushes.Transparent };
-        tab.MouseEnter += (_, _) => { if (!ReferenceEquals(note, ActiveNote)) tab.Background = Themes.Get("Hover"); };
-        tab.MouseLeave += (_, _) => tab.Background = ReferenceEquals(note, ActiveNote) ? Themes.Get("Select") : Brushes.Transparent;
-        tab.MouseLeftButtonDown += (_, e) => { OpenNote(note); e.Handled = true; };
+        // The close cross shows on the open tab and under the mouse
+        var cross = new TextBlock { Text = "\uE711", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 9, Foreground = Themes.Get("Text"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var close = new Border { Width = 20, Height = 20, CornerRadius = new CornerRadius(5), Margin = new Thickness(8, 0, -6, 0), Background = Brushes.Transparent, Child = cross, ToolTip = "Close", Visibility = active ? Visibility.Visible : Visibility.Hidden, Tag = "close" };
+        close.MouseEnter += (_, _) => close.Background = Themes.Get("Line");
+        close.MouseLeave += (_, _) => close.Background = Brushes.Transparent;
+        close.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        close.MouseLeftButtonUp += (_, e) => { e.Handled = true; _ = CloseTabAsync(note); };
+        row.Children.Add(close);
+
+        var tab = new Border { Child = row, Tag = note, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(1, 0, 1, 0), Cursor = Cursors.Hand, Background = active ? Themes.Get("Select") : Brushes.Transparent, BorderBrush = Themes.Get("Accent") };
+        tab.MouseEnter += (_, _) => { close.Visibility = Visibility.Visible; if (!ReferenceEquals(note, ActiveNote)) tab.Background = Themes.Get("Hover"); };
+        tab.MouseLeave += (_, _) =>
+        {
+            if (!ReferenceEquals(note, ActiveNote)) close.Visibility = Visibility.Hidden;
+            tab.Background = ReferenceEquals(note, ActiveNote) ? Themes.Get("Select") : Brushes.Transparent;
+        };
+        // Pressing starts a click or a drag; the note opens when the button is released (see TabStrip_PreviewMouseUp)
+        tab.MouseLeftButtonDown += (_, e) => { _tabDragNote = note; _tabDragOrigin = e.GetPosition(null); };
+        tab.MouseUp += (_, e) => { if (e.ChangedButton == MouseButton.Middle) { e.Handled = true; _ = CloseTabAsync(note); } };
         tab.PreviewMouseRightButtonUp += (_, e) => { ShowMenu(tab, NoteEntries(note), PlacementMode.MousePoint); e.Handled = true; };
         return tab;
+    }
+
+    private void TabStrip_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_tabDragNote is not { } note) return;
+        _tabDragNote = null;
+        OpenNote(note);
+    }
+
+    private void TabStrip_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_tabDragNote is not { } note) return;
+        if (e.LeftButton != MouseButtonState.Pressed) { _tabDragNote = null; return; }
+        var delta = e.GetPosition(null) - _tabDragOrigin;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        _tabDragNote = null;
+        if (_panes.Count > 0) ShowDropTiles();
+        try { DragDrop.DoDragDrop(TabStrip, new DataObject(DragFormat, note.Id.ToString()), DragDropEffects.Move); }
+        finally
+        {
+            DropLayer.Visibility = Visibility.Collapsed;
+            ShowTabMarker(-1);
+        }
+    }
+
+    /// <summary>Where a dragged tab would land: the notes as in the tabs (without it), the index it would get in them, and the tab the marker goes before (-1 = after the last).</summary>
+    private (List<Note> Others, int Index, int MarkerBefore)? TabTarget(Note dragged, double x)
+    {
+        var tabs = TabStrip.Children.OfType<Border>().ToList();
+        var shown = tabs.Select(t => (Note)t.Tag).ToList();
+        var index = shown.Count;
+        for (var i = 0; i < tabs.Count; i++)
+        {
+            var bounds = tabs[i].TransformToAncestor(TabStrip).TransformBounds(new Rect(tabs[i].RenderSize));
+            if (x < bounds.Left + bounds.Width / 2) { index = i; break; }
+        }
+        var others = shown.Where(n => n != dragged).ToList();
+        var at = Math.Min(shown.Take(index).Count(n => n != dragged), others.Count);
+        // Pinned notes stay before the others: a tab can only be moved within its own group.
+        var pinned = others.Count(n => n.IsPinned);
+        at = dragged.IsPinned ? Math.Min(at, pinned) : Math.Max(at, pinned);
+        return (others, at, at < others.Count ? shown.IndexOf(others[at]) : -1);
+    }
+
+    /// <summary>Marks where a dragged tab would land with a line along the edge of a tab (-1 for after the last tab; clear with ShowTabMarker(-2)).</summary>
+    private void ShowTabMarker(int before)
+    {
+        var tabs = TabStrip.Children.OfType<Border>().ToList();
+        for (var i = 0; i < tabs.Count; i++)
+            tabs[i].BorderThickness = new Thickness(i == before ? 2 : 0, 0, before == -1 && i == tabs.Count - 1 ? 2 : 0, 0);
+    }
+
+    private void TabStrip_DragOver(object sender, DragEventArgs e)
+    {
+        if (DraggedNote(e.Data) is not { } note || TabTarget(note, e.GetPosition(TabStrip).X) is not { } target)
+        {
+            ShowTabMarker(-2);
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+        var position = e.GetPosition(TabScroller);
+        if (position.X < 30) TabScroller.ScrollToHorizontalOffset(TabScroller.HorizontalOffset - 14);
+        else if (position.X > TabScroller.ActualWidth - 30) TabScroller.ScrollToHorizontalOffset(TabScroller.HorizontalOffset + 14);
+        ShowTabMarker(target.MarkerBefore);
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void TabStrip_DragLeave(object sender, DragEventArgs e) => ShowTabMarker(-2);
+
+    private void TabStrip_Drop(object sender, DragEventArgs e)
+    {
+        ShowTabMarker(-2);
+        if (DraggedNote(e.Data) is not { } note || TabTarget(note, e.GetPosition(TabStrip).X) is not { } target) return;
+        e.Handled = true;
+        MoveNote(note, target.Others, target.Index);
+    }
+
+    /// <summary>The cross on a tab. A note that is already a file on this computer (or a locked one) is deleted the usual way; otherwise, like Notepad, it asks to save first.</summary>
+    private async Task CloseTabAsync(Note note)
+    {
+        if (note.IsLocked || note.IsLinked) { await DeleteNoteAsync(note); return; }
+        if (!string.IsNullOrWhiteSpace(note.Content))
+        {
+            var save = await AskSaveAsync("Save this note?", $"“{note.Title}” is only stored in Scrawl. Closing it removes it from Scrawl, so you can save it as a file first.", "Save", "Don't save");
+            if (save is null) return;
+            if (save == true && !ExportNote(note, ".txt")) return;
+        }
+        await RemoveNoteAsync(note);
+    }
+
+    /// <summary>Asks to save, not save or cancel. True = save, false = don't save, null = cancel.</summary>
+    private async Task<bool?> AskSaveAsync(string title, string message, string save, string dontSave)
+    {
+        var saved = await ConfirmAsync(title, message, save, thirdText: dontSave);
+        return saved ? true : _dialogThirdChosen ? false : null;
+    }
+
+    private void DialogThird_Click(object sender, RoutedEventArgs e)
+    {
+        _dialogThirdChosen = true;
+        CloseDialog(false);
+    }
+
+    // ───────────── Undo after deleting ─────────────
+
+    /// <summary>Takes a note away (no questions asked) and offers to bring it back for 10 seconds.</summary>
+    private async Task RemoveNoteAsync(Note note)
+    {
+        note.PropertyChanged -= Note_PropertyChanged;
+        foreach (var pane in _panes.Where(p => p.Note == note).ToList()) RemovePane(pane);
+        _notes.Remove(note);
+        RefreshNotesView();
+        await SaveAsync();
+        _deleted.Push(note);
+        ShowUndoToast();
+    }
+
+    private void ShowUndoToast()
+    {
+        UndoText.Text = _deleted.Count > 1 ? $"{_deleted.Count} notes deleted" : $"“{_deleted.Peek().Title}” deleted";
+        UndoToast.Visibility = Visibility.Visible;
+        _undoTimer.Stop();
+        _undoTimer.Start();
+    }
+
+    private void UndoDelete_Click(object sender, RoutedEventArgs e) => UndoDelete();
+
+    private void UndoDelete()
+    {
+        if (_deleted.Count == 0) return;
+        var note = _deleted.Pop();
+        Add(note);
+        RefreshNotesView();
+        OpenNote(note);
+        QueueSave();
+        if (_deleted.Count > 0) ShowUndoToast();
+        else { _undoTimer.Stop(); UndoToast.Visibility = Visibility.Collapsed; }
     }
 
     private void TabScroller_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -736,7 +906,7 @@ public partial class MainWindow : Window
     {
         if (_notesView is null) return;
         SearchBox.Clear();
-        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Order = TopOrder(), Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
+        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Order = _settings.NotepadLayout ? BottomOrder() : TopOrder(), Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
         Add(note);
         RefreshNotesView();
         OpenNote(note);
@@ -1006,9 +1176,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ExportNote(Note note, string extension)
+    private bool ExportNote(Note note, string extension)
     {
-        if (!Readable(note)) { _ = Info("Note is locked", "Unlock the note first."); return; }
+        if (!Readable(note)) { _ = Info("Note is locked", "Unlock the note first."); return false; }
         extension = NormalizeExtension(extension);
         var dialog = new SaveFileDialog
         {
@@ -1018,11 +1188,12 @@ public partial class MainWindow : Window
             DefaultExt = extension,
             AddExtension = true
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(this) != true) return false;
         File.WriteAllText(dialog.FileName, ToFileText(note));
         if (!note.IsLinked) LinkToFile(note, dialog.FileName);
         else if (string.Equals(note.FilePath, Path.GetFullPath(dialog.FileName), StringComparison.OrdinalIgnoreCase)) _files.Track(note, LinkedFiles.Read(note.FilePath!));
         SavedLabel.Text = "Exported";
+        return true;
     }
 
     private void Download_Click(object sender, RoutedEventArgs e)
@@ -1171,11 +1342,7 @@ public partial class MainWindow : Window
             if (await PromptPasswordAsync("Delete locked note?", $"Enter the {LockWord(note)} of “{note.Title}” to delete it. This can't be undone.", "Delete", confirm: false, check: pw => NoteLock.Verify(note, pw), danger: true, pinLength: note.PinLength) is null) return;
         }
         else if (!await ConfirmAsync("Delete note?", $"“{note.Title}” will be deleted from this device." + (note.IsLinked ? " The file on disk is not touched." : " This can't be undone."), "Delete", danger: true)) return;
-        note.PropertyChanged -= Note_PropertyChanged;
-        foreach (var pane in _panes.Where(p => p.Note == note).ToList()) RemovePane(pane);
-        _notes.Remove(note);
-        RefreshNotesView();
-        await SaveAsync();
+        await RemoveNoteAsync(note);
     }
 
     // ───────────── Files that disappear ─────────────
@@ -1464,9 +1631,12 @@ public partial class MainWindow : Window
     private string? _pinFirst;
     private bool _pinCreating;
 
-    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false, bool kindChoice = false, int pinLength = 0)
+    private Task<bool> ConfirmAsync(string title, string message, string ok, bool danger = false, bool showCancel = true, Func<string?>? validate = null, int passwordBoxes = 0, string cancelText = "Cancel", bool okVisible = true, bool requireChoice = false, bool kindChoice = false, int pinLength = 0, string? thirdText = null)
     {
         _dialog?.TrySetResult(false);
+        _dialogThirdChosen = false;
+        DialogThird.Visibility = thirdText is null ? Visibility.Collapsed : Visibility.Visible;
+        if (thirdText is not null) DialogThird.Content = thirdText;
         _dialog = new TaskCompletionSource<bool>();
         _dialogValidator = validate;
         EmojiText.SetText(DialogTitle, title);

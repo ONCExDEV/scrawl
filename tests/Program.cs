@@ -392,6 +392,49 @@ internal static class Program
             Assert(window.TrafficPanel.Parent == window.RightTools && window.SidebarToggle.Visibility == System.Windows.Visibility.Visible && !windowSettings.SidebarCollapsed, "the window buttons, the three-line button and the notes list are back");
             Console.WriteLine("PASS: the Notepad style window can be turned on and off");
 
+            // Ctrl+Z in the title must never bring back the title of another note.
+            var undoPane = new NotePane();
+            undoPane.Load(new Note { Title = "First note", Content = "a" });
+            undoPane.Load(new Note { Title = "Second note", Content = "b" });
+            undoPane.TitleBox.Undo();
+            Assert(!undoPane.TitleBox.CanUndo && undoPane.TitleBox.Text == "Second note" && undoPane.Note!.Title == "Second note", "undo in the title box does not bring back the title of the note shown before");
+
+            // Tabs: new notes go last, tabNote asks to save, deleting can be undone for a while.
+            useNotepad.Invoke(window, [true]);
+            typeof(MainWindow).GetMethod("NewNote", nonPublic)!.Invoke(window, null);
+            var newest = windowNotes[^1];
+            Assert(ReferenceEquals(window.TabStrip.Children.OfType<System.Windows.Controls.Border>().Last().Tag, newest) && windowNotes.Where(n => n != newest).All(n => n.Order > newest.Order), "a new note gets the last tab");
+            ((Stack<Note>)typeof(MainWindow).GetField("_deleted", nonPublic)!.GetValue(window)!).Clear();   // deletions of the tests above
+            window.UndoToast.Visibility = System.Windows.Visibility.Collapsed;
+            var closeTab = typeof(MainWindow).GetMethod("CloseTabAsync", nonPublic)!;
+            var tabNote = new Note { Title = "Close me", Content = "some text", Order = 5000 };
+            addNote.Invoke(window, [tabNote]);
+            var closeTask = (Task)closeTab.Invoke(window, [tabNote])!;
+            Assert(window.DialogLayer.Visibility == System.Windows.Visibility.Visible && window.DialogThird.Visibility == System.Windows.Visibility.Visible, "tabNote a tab asks: save, don't save or cancel");
+            Click("DialogCancel_Click");
+            Pump(closeTask);
+            Assert(windowNotes.Contains(tabNote) && window.UndoToast.Visibility == System.Windows.Visibility.Collapsed, "cancel keeps the note");
+            closeTask = (Task)closeTab.Invoke(window, [tabNote])!;
+            Click("DialogThird_Click");
+            Pump(closeTask);
+            Assert(!windowNotes.Contains(tabNote) && window.TabOf(tabNote) is null, "don't save closes the note and its tab");
+            Assert(window.UndoToast.Visibility == System.Windows.Visibility.Visible, "an undo button appears after a note is deleted");
+            Click("UndoDelete_Click");
+            Assert(windowNotes.Contains(tabNote) && window.TabOf(tabNote) is not null && window.UndoToast.Visibility == System.Windows.Visibility.Collapsed, "undo brings the note back");
+            var blank = new Note { Title = "Blank", Content = "  ", Order = 5001 };
+            addNote.Invoke(window, [blank]);
+            Pump((Task)closeTab.Invoke(window, [blank])!);
+            Assert(!windowNotes.Contains(blank) && window.DialogLayer.Visibility == System.Windows.Visibility.Collapsed && window.UndoToast.Visibility == System.Windows.Visibility.Visible, "an empty note closes without asking, with undo");
+            Click("UndoDelete_Click");
+            // Dragging a tab: a note moved to the end of the tabs ends up last.
+            var ordered = window.TabStrip.Children.OfType<System.Windows.Controls.Border>().Select(t => (Note)t.Tag).ToList();
+            var movedNote = ordered.First(n => !n.IsPinned);
+            var restOfNotes = ordered.Where(n => n != movedNote).ToList();
+            moveNote.Invoke(window, [movedNote, restOfNotes, restOfNotes.Count]);
+            Assert(ReferenceEquals(window.TabStrip.Children.OfType<System.Windows.Controls.Border>().Last().Tag, movedNote), "a note moved to the end becomes the last tab");
+            useNotepad.Invoke(window, [false]);
+            Console.WriteLine("PASS: tabs close with a question, new notes go last and deleted notes can be brought back");
+
             // Emoji in color: found in text, drawn by DirectWrite, shown in the editor, the notes list and the title.
             Assert(ColorEmoji.IsAvailable, "Windows can draw color emoji here");
             Assert(ColorEmoji.Find("a\U0001F600b") is { Index: 1, Length: 2 }, "an emoji is found in text");

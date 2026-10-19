@@ -67,7 +67,9 @@ public partial class NotePane : UserControl
     {
         _loading = true;
         Note = note;
+        TitleBox.IsUndoEnabled = false;   // the title box must not remember the titles of the notes shown before (Ctrl+Z would paste one of them)
         TitleBox.Text = note.Title;
+        TitleBox.IsUndoEnabled = true;
         UpdateTitleView();
         var locked = note.IsLocked && !note.IsUnlocked;
         if (locked) ShowLock(); else HideLock();
