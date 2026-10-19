@@ -366,6 +366,32 @@ internal static class Program
             Assert(askedLocked == 0, "a locked note shows no editing menu");
             Console.WriteLine("PASS: right-clicking a note opens the editing menu");
 
+            // The Notepad style window: one tab per note on a row of its own, the window buttons move up there, the notes list goes away.
+            var useNotepad = typeof(MainWindow).GetMethod("UseNotepadWindow", nonPublic)!;
+            var openNote = typeof(MainWindow).GetMethod("OpenNote", nonPublic)!;
+            var windowSettings = (Settings)typeof(MainWindow).GetField("_settings", nonPublic)!.GetValue(window)!;
+            var windowNotes = (System.Collections.ObjectModel.ObservableCollection<Note>)typeof(MainWindow).GetField("_notes", nonPublic)!.GetValue(window)!;
+            Assert(windowNotes.Count >= 2, "there are notes to show as tabs");
+            Assert(window.TabBar.Visibility == System.Windows.Visibility.Collapsed && window.SidebarToggle.Visibility == System.Windows.Visibility.Visible && window.TrafficPanel.Parent == window.RightTools, "the normal window has no tab row");
+            useNotepad.Invoke(window, [true]);
+            Assert(windowSettings.NotepadLayout && window.TabBar.Visibility == System.Windows.Visibility.Visible && window.TabRowDef.Height.Value == 40, "the Notepad style window shows the tab row");
+            Assert(window.SidebarToggle.Visibility == System.Windows.Visibility.Collapsed, "the three-line button is gone");
+            Assert(window.TrafficPanel.Parent == window.TabTraffic && window.TabTraffic.Children.Count == 1, "the window buttons moved to the tab row");
+            Assert(windowSettings.SidebarCollapsed, "the notes list is hidden");
+            Assert(window.TabStrip.Children.Count == windowNotes.Count, "every note has a tab");
+            openNote.Invoke(window, [windowNotes[0]]);
+            openNote.Invoke(window, [windowNotes[1]]);
+            Assert(window.TabOf(windowNotes[1])!.Background != System.Windows.Media.Brushes.Transparent && window.TabOf(windowNotes[0])!.Background == System.Windows.Media.Brushes.Transparent, "the open note's tab is highlighted, the others are not");
+            openNote.Invoke(window, [windowNotes[0]]);
+            Assert(window.TabOf(windowNotes[0])!.Background != System.Windows.Media.Brushes.Transparent && window.TabOf(windowNotes[1])!.Background == System.Windows.Media.Brushes.Transparent, "clicking another note moves the highlight");
+            var tabsBefore = window.TabStrip.Children.Count;
+            typeof(MainWindow).GetMethod("NewNote", nonPublic)!.Invoke(window, null);
+            Assert(window.TabStrip.Children.Count == tabsBefore + 1, "a new note gets a tab");
+            useNotepad.Invoke(window, [false]);
+            Assert(!windowSettings.NotepadLayout && window.TabBar.Visibility == System.Windows.Visibility.Collapsed && window.TabRowDef.Height.Value == 0, "turning it off brings the normal window back");
+            Assert(window.TrafficPanel.Parent == window.RightTools && window.SidebarToggle.Visibility == System.Windows.Visibility.Visible && !windowSettings.SidebarCollapsed, "the window buttons, the three-line button and the notes list are back");
+            Console.WriteLine("PASS: the Notepad style window can be turned on and off");
+
             // Emoji in color: found in text, drawn by DirectWrite, shown in the editor, the notes list and the title.
             Assert(ColorEmoji.IsAvailable, "Windows can draw color emoji here");
             Assert(ColorEmoji.Find("a\U0001F600b") is { Index: 1, Length: 2 }, "an emoji is found in text");
@@ -406,6 +432,25 @@ internal static class Program
             EmojiText.SetText(listText, "no emoji");
             Assert(listText.Text == "no emoji", "list text without emoji stays plain text");
             Console.WriteLine("PASS: emoji are shown in color");
+
+            // Wrapping like Notepad: a long address fills the line and breaks at the edge instead of jumping to the next line.
+            var wrapPane = new NotePane();
+            wrapPane.Load(new Note { Title = "Wrap", Content = "https://api.example.net/files/v4/loaders/0123456789abcdef0123456789abcdef0123456789abcdef.lua" });
+            wrapPane.Measure(new System.Windows.Size(520, 400));
+            wrapPane.Arrange(new System.Windows.Rect(0, 0, 520, 400));
+            wrapPane.UpdateLayout();
+            wrapPane.Editor.TextArea.TextView.EnsureVisualLines();
+            var wrapLine = wrapPane.Editor.TextArea.TextView.GetVisualLine(1)!;
+            var firstLineLength = wrapLine.TextLines[0].Length;
+            Assert(wrapLine.TextLines.Count >= 2 && firstLineLength > 55, "a long address keeps filling the first line (first line has " + firstLineLength + " characters)");
+            Assert(wrapPane.Editor.Text.StartsWith("https://api.example.net/files/v4/loaders/0123"), "wrapping does not change the text");
+            var caretPane = wrapPane.Editor;
+            caretPane.CaretOffset = 0;
+            for (var step = 0; step < 40; step++) System.Windows.Documents.EditingCommands.MoveRightByCharacter.Execute(null, caretPane.TextArea);
+            Assert(caretPane.CaretOffset == 40, "the caret moves one character per key press over the wrapped address (at " + caretPane.CaretOffset + ")");
+            for (var step = 0; step < 40; step++) System.Windows.Documents.EditingCommands.MoveLeftByCharacter.Execute(null, caretPane.TextArea);
+            Assert(caretPane.CaretOffset == 0, "and one character per key press going back (at " + caretPane.CaretOffset + ")");
+            Console.WriteLine("PASS: long lines wrap like Notepad");
 
             // Updates: a fake GitHub, so no network is used. Newer release found, right asset chosen, download verified, exe swapped in place.
             SynchronizationContext.SetSynchronizationContext(null);   // these tests wait on tasks; with the dispatcher context they would wait on themselves

@@ -14,6 +14,7 @@ public sealed class Settings
     public bool SidebarCollapsed { get; set; }
     public bool WelcomeDone { get; set; }
     public bool AutoSave { get; set; } = true;
+    public bool NotepadLayout { get; set; }
     public string NewNoteKind { get; set; } = "text";
     public string LastCode { get; set; } = "csharp";
 

@@ -93,7 +93,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
-                        <Border x:Name="T" Background="{DynamicResource Muted}" Opacity="0.3" CornerRadius="4" Margin="2" />
+                        <Border x:Name="T" Background="{DynamicResource Muted}" Opacity="0.3" CornerRadius="4" Margin="{TemplateBinding Padding}" />
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="Opacity" Value="0.6" /></Trigger>
                             <Trigger Property="IsDragging" Value="True"><Setter TargetName="T" Property="Opacity" Value="0.8" /></Trigger>
@@ -111,11 +111,22 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
+                        <!-- Thin at rest, thicker while the mouse is over the bar (like the scroll bars of Windows 11) -->
                         <Track x:Name="PART_Track" IsDirectionReversed="True">
                             <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource ScrollPage}" /></Track.DecreaseRepeatButton>
-                            <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" /></Track.Thumb>
+                            <Track.Thumb><Thumb x:Name="Thumb" Style="{StaticResource ScrollThumb}" Padding="7,2,2,2" /></Track.Thumb>
                             <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource ScrollPage}" /></Track.IncreaseRepeatButton>
                         </Track>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="3,2,2,2" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                            <Trigger.ExitActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="7,2,2,2" Duration="0:0:0.16"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger SourceName="Thumb" Property="IsDragging" Value="True">
+                            <Trigger.EnterActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="3,2,2,2" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                            <Trigger.ExitActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="7,2,2,2" Duration="0:0:0.16"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -128,9 +139,19 @@
                             <ControlTemplate TargetType="ScrollBar">
                                 <Track x:Name="PART_Track">
                                     <Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageLeftCommand" Style="{StaticResource ScrollPage}" /></Track.DecreaseRepeatButton>
-                                    <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" /></Track.Thumb>
+                                    <Track.Thumb><Thumb x:Name="Thumb" Style="{StaticResource ScrollThumb}" Padding="2,7,2,2" /></Track.Thumb>
                                     <Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageRightCommand" Style="{StaticResource ScrollPage}" /></Track.IncreaseRepeatButton>
                                 </Track>
+                                <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                            <Trigger.EnterActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="2,3,2,2" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                            <Trigger.ExitActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="2,7,2,2" Duration="0:0:0.16"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger SourceName="Thumb" Property="IsDragging" Value="True">
+                            <Trigger.EnterActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="2,3,2,2" Duration="0:0:0.12"/></Storyboard></BeginStoryboard></Trigger.EnterActions>
+                            <Trigger.ExitActions><BeginStoryboard><Storyboard><ThicknessAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Padding" To="2,7,2,2" Duration="0:0:0.16"/></Storyboard></BeginStoryboard></Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </Setter.Value>
                     </Setter>

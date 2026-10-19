@@ -17,15 +17,30 @@
         <Border x:Name="Root" Margin="10" CornerRadius="16" Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Line}" BorderThickness="1" SizeChanged="Root_SizeChanged">
             <Grid>
                 <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="40"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition x:Name="TabRowDef" Height="0"/><RowDefinition Height="40"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 
+                    <!-- Notepad style window (a setting): logo, one tab per note and the window buttons on their own row above the menus -->
+                    <Border x:Name="TabBar" Grid.ColumnSpan="2" Background="{DynamicResource Side}" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <Image Source="Assets/logo.png" Width="20" Height="20" RenderOptions.BitmapScalingMode="HighQuality" Margin="16,0,10,0" VerticalAlignment="Center"/>
+                            <ScrollViewer x:Name="TabScroller" Grid.Column="1" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" PreviewMouseWheel="TabScroller_MouseWheel">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
+                                    <StackPanel x:Name="TabStrip" Orientation="Horizontal"/>
+                                    <Button Click="NewNote_Click" ToolTip="New note (Ctrl+N)" Margin="4,0,0,0"><TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12"/></Button>
+                                </StackPanel>
+                            </ScrollViewer>
+                            <Grid x:Name="TabTraffic" Grid.Column="2" Margin="12,0,16,0" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True"/>
+                        </Grid>
+                    </Border>
+
                     <!-- Top bar: sidebar toggle + menus | tools | theme + window buttons -->
-                    <Border Grid.ColumnSpan="2" Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"/>
-                    <Grid Grid.ColumnSpan="2">
+                    <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{DynamicResource Side}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"/>
+                    <Grid Grid.Row="1" Grid.ColumnSpan="2">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0" WindowChrome.IsHitTestVisibleInChrome="True">
-                            <Button Click="ToggleSidebar_Click" ToolTip="Show / hide notes (Ctrl+\)" Margin="0,0,4,0"><TextBlock Text="&#xE700;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
+                            <Button x:Name="SidebarToggle" Click="ToggleSidebar_Click" ToolTip="Show / hide notes (Ctrl+\)" Margin="0,0,4,0"><TextBlock Text="&#xE700;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
                             <Button x:Name="MenuFile" Content="File" Click="Menu_Click" MouseEnter="Menu_MouseEnter" Padding="12,5" Foreground="{DynamicResource Text}"/>
                             <Button x:Name="MenuEdit" Content="Edit" Click="Menu_Click" MouseEnter="Menu_MouseEnter" Padding="12,5" Foreground="{DynamicResource Text}"/>
                             <Button x:Name="MenuView" Content="View" Click="Menu_Click" MouseEnter="Menu_MouseEnter" Padding="12,5" Foreground="{DynamicResource Text}"/>
@@ -43,20 +58,22 @@
                             <Border Width="1" Height="16" Background="{DynamicResource Line}" Margin="6,0"/>
                             <Button Click="Find_Click" ToolTip="Search notes (Ctrl+F)"><TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="14"/></Button>
                         </StackPanel>
-                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0" WindowChrome.IsHitTestVisibleInChrome="True">
+                        <StackPanel x:Name="RightTools" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0" WindowChrome.IsHitTestVisibleInChrome="True">
                             <Button x:Name="UpdateButton" Style="{StaticResource AccentButton}" Click="Update_Click" Padding="12,6" Margin="0,0,8,0" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE895;" FontFamily="{StaticResource Icons}" FontSize="13" Margin="0,1,6,0"/><TextBlock Text="Update" FontSize="12.5"/></StackPanel>
                             </Button>
                             <Button Click="Settings_Click" ToolTip="Settings (Ctrl+,)"><TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="15"/></Button>
                             <Button x:Name="ThemeButton" Click="Theme_Click" ToolTip="Theme" Margin="0,0,16,0"><TextBlock Text="&#xE790;" FontFamily="{StaticResource Icons}" FontSize="15"/></Button>
-                            <Button Style="{StaticResource Traffic}" Content="&#xE921;" Click="Minimize_Click" ToolTip="Minimize"><Button.Tag><SolidColorBrush Color="#FEBC2E"/></Button.Tag></Button>
-                            <Button Style="{StaticResource Traffic}" Content="&#xE922;" Click="Maximize_Click" ToolTip="Maximize"><Button.Tag><SolidColorBrush Color="#28C840"/></Button.Tag></Button>
-                            <Button Style="{StaticResource Traffic}" Content="&#xE8BB;" Click="Close_Click" ToolTip="Close"><Button.Tag><SolidColorBrush Color="#FF5F57"/></Button.Tag></Button>
+                            <StackPanel x:Name="TrafficPanel" Orientation="Horizontal">
+                                <Button Style="{StaticResource Traffic}" Content="&#xE921;" Click="Minimize_Click" ToolTip="Minimize"><Button.Tag><SolidColorBrush Color="#FEBC2E"/></Button.Tag></Button>
+                                <Button Style="{StaticResource Traffic}" Content="&#xE922;" Click="Maximize_Click" ToolTip="Maximize"><Button.Tag><SolidColorBrush Color="#28C840"/></Button.Tag></Button>
+                                <Button Style="{StaticResource Traffic}" Content="&#xE8BB;" Click="Close_Click" ToolTip="Close"><Button.Tag><SolidColorBrush Color="#FF5F57"/></Button.Tag></Button>
+                            </StackPanel>
                         </StackPanel>
                     </Grid>
 
                     <!-- Sidebar: the host's width is animated, the content keeps its size and slides out -->
-                    <Grid x:Name="SidebarHost" Grid.Row="1" Width="273" ClipToBounds="True">
+                    <Grid x:Name="SidebarHost" Grid.Row="2" Width="273" ClipToBounds="True">
                         <Grid Width="273" HorizontalAlignment="Left" Background="{DynamicResource Side}">
                             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                             <DockPanel Margin="16,12,14,8">
@@ -110,7 +127,7 @@
                     </Grid>
 
                     <!-- Main -->
-                    <Grid Grid.Row="1" Grid.Column="1" Background="Transparent" MouseRightButtonUp="Main_RightClick">
+                    <Grid Grid.Row="2" Grid.Column="1" Background="Transparent" MouseRightButtonUp="Main_RightClick">
                         <Grid x:Name="EditorLayout" Visibility="Collapsed">
                             <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/><RowDefinition Height="26"/></Grid.RowDefinitions>
 
@@ -211,6 +228,13 @@
                                         </StackPanel>
                                         <TextBlock Text="Font size" FontSize="14" VerticalAlignment="Center"/>
                                     </DockPanel>
+                                <DockPanel Margin="0,7">
+                                    <CheckBox x:Name="SetNotepadLayout" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Setting_Click" VerticalAlignment="Center" VerticalContentAlignment="Top"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Notepad style window" FontSize="14"/>
+                                        <TextBlock Text="Your notes become tabs along the top, like Windows Notepad. The notes list is hidden." FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,16,0"/>
+                                    </StackPanel>
+                                </DockPanel>
                                 <DockPanel Margin="0,7">
                                     <CheckBox x:Name="SetSans" DockPanel.Dock="Right" Style="{StaticResource Switch}" Click="Setting_Click" VerticalAlignment="Center"/>
                                     <StackPanel VerticalAlignment="Center"><TextBlock Text="Proportional font in Notepad" FontSize="14"/></StackPanel>

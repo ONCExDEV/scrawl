@@ -70,6 +70,7 @@ public partial class MainWindow : Window
         Themes.Apply(Themes.Find(_settings.Theme));
         InitializeComponent();
         SidebarHost.Width = _settings.SidebarCollapsed ? 0 : SidebarWidth;
+        ApplyWindowStyle();
 
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveAsync(); };
         _flyoutTimer.Tick += FlyoutTick;
@@ -217,6 +218,7 @@ public partial class MainWindow : Window
     private void RefreshNotesView()
     {
         _notesView?.Refresh();
+        RebuildTabs();
         NotesCount.Text = _notes.Count == 1 ? "1 note" : $"{_notes.Count} notes";
     }
 
@@ -252,7 +254,7 @@ public partial class MainWindow : Window
 
     private void Note_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(Note.IsPinned) or nameof(Note.Order)) _notesView?.Refresh();
+        if (e.PropertyName is nameof(Note.IsPinned) or nameof(Note.Order)) { _notesView?.Refresh(); RebuildTabs(); }
     }
 
     // ───────────── Panes (up to four notes side by side) ─────────────
@@ -379,6 +381,7 @@ public partial class MainWindow : Window
         RefreshToolbar();
         UpdateStats();
         UpdateCursor();
+        RebuildTabs();
     }
 
     /// <summary>Shows a note: focuses the pane that already has it, otherwise loads it into the active pane.</summary>
@@ -620,7 +623,13 @@ public partial class MainWindow : Window
 
     private void NotesList_RightClick(object sender, MouseButtonEventArgs e)
     {
-        var note = NoteAt(e.OriginalSource as DependencyObject);
+        ShowMenu(NotesList, NoteEntries(NoteAt(e.OriginalSource as DependencyObject)), PlacementMode.MousePoint);
+        e.Handled = true;
+    }
+
+    /// <summary>The right-click menu of a note in the list or on a tab (or of the empty list when there is no note).</summary>
+    private List<Entry> NoteEntries(Note? note)
+    {
         var entries = new List<Entry>();
         if (note is null)
         {
@@ -649,9 +658,77 @@ public partial class MainWindow : Window
             entries.Add(new(null));
             entries.Add(new("Delete…", null, () => _ = DeleteNoteAsync(note)));
         }
-        ShowMenu(NotesList, entries, PlacementMode.MousePoint);
+        return entries;
+    }
+
+    // ───────────── Notepad style window: one tab per note ─────────────
+
+    /// <summary>Switches between the normal window and the Notepad style one (notes as tabs on top, the notes list hidden).</summary>
+    private void UseNotepadWindow(bool on)
+    {
+        _settings.NotepadLayout = on;
+        ApplyWindowStyle();
+        SetSidebar(!on);
+    }
+
+    private void ApplyWindowStyle()
+    {
+        var on = _settings.NotepadLayout;
+        TabRowDef.Height = new GridLength(on ? 40 : 0);
+        TabBar.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        SidebarToggle.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+        (TrafficPanel.Parent as Panel)?.Children.Remove(TrafficPanel);
+        ((Panel)(on ? TabTraffic : RightTools)).Children.Add(TrafficPanel);
+        ThemeButton.Margin = new Thickness(0, 0, on ? 0 : 16, 0);
+        RightTools.Margin = new Thickness(0, 0, on ? 8 : 16, 0);
+        SettingsLayer.Margin = WelcomeLayer.Margin = DialogLayer.Margin = new Thickness(0, on ? 80 : 40, 0, 0);
+        if (System.Windows.Shell.WindowChrome.GetWindowChrome(this) is { } chrome) chrome.CaptionHeight = on ? 90 : 50;
+        RebuildTabs();
+    }
+
+    /// <summary>The tabs along the top: every note, in the order of the notes list; the open note is highlighted.</summary>
+    private void RebuildTabs()
+    {
+        if (!_settings.NotepadLayout) return;
+        TabStrip.Children.Clear();
+        foreach (var note in _notes.OrderByDescending(n => n.IsPinned).ThenByDescending(n => n.Order)) TabStrip.Children.Add(MakeTab(note));
+        Dispatcher.BeginInvoke(() =>
+        {
+            foreach (var tab in TabStrip.Children.OfType<Border>()) if (ReferenceEquals(tab.Tag, ActiveNote)) tab.BringIntoView();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private Border MakeTab(Note note)
+    {
+        var active = ReferenceEquals(note, ActiveNote);
+        var visible = (IValueConverter)FindResource("BoolToVis");
+        var row = new StackPanel { Orientation = Orientation.Horizontal, DataContext = note };
+        var pin = new TextBlock { Text = "\uE718", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 10, Foreground = Themes.Get("Accent"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 6, 0) };
+        pin.SetBinding(VisibilityProperty, new Binding("IsPinned") { Converter = visible });
+        var lockIcon = new TextBlock { Text = "\uE72E", FontFamily = (FontFamily)FindResource("Icons"), FontSize = 10, Foreground = Themes.Get("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 6, 0) };
+        lockIcon.SetBinding(VisibilityProperty, new Binding("IsLocked") { Converter = visible });
+        var title = new TextBlock { FontSize = 12.5, MaxWidth = 170, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, Foreground = Themes.Get("Text"), Opacity = active ? 1 : 0.72 };
+        title.SetBinding(EmojiText.TextProperty, new Binding("Title"));
+        row.Children.Add(pin);
+        row.Children.Add(lockIcon);
+        row.Children.Add(title);
+
+        var tab = new Border { Child = row, Tag = note, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(1, 0, 1, 0), Cursor = Cursors.Hand, Background = active ? Themes.Get("Select") : Brushes.Transparent };
+        tab.MouseEnter += (_, _) => { if (!ReferenceEquals(note, ActiveNote)) tab.Background = Themes.Get("Hover"); };
+        tab.MouseLeave += (_, _) => tab.Background = ReferenceEquals(note, ActiveNote) ? Themes.Get("Select") : Brushes.Transparent;
+        tab.MouseLeftButtonDown += (_, e) => { OpenNote(note); e.Handled = true; };
+        tab.PreviewMouseRightButtonUp += (_, e) => { ShowMenu(tab, NoteEntries(note), PlacementMode.MousePoint); e.Handled = true; };
+        return tab;
+    }
+
+    private void TabScroller_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        TabScroller.ScrollToHorizontalOffset(TabScroller.HorizontalOffset - e.Delta);
         e.Handled = true;
     }
+
+    /// <summary>The tab of a note (for the tests).</summary>
+    internal Border? TabOf(Note note) => TabStrip.Children.OfType<Border>().FirstOrDefault(t => ReferenceEquals(t.Tag, note));
 
     private void NewNote_Click(object sender, RoutedEventArgs e) => NewNote();
 
@@ -1280,6 +1357,7 @@ public partial class MainWindow : Window
         SetNumbersCode.IsChecked = _settings.LineNumbersCode;
         SetList.IsChecked = !_settings.SidebarCollapsed;
         SetAutoSave.IsChecked = _settings.AutoSave;
+        SetNotepadLayout.IsChecked = _settings.NotepadLayout;
         NewKindText.IsChecked = _settings.NewNoteKind != "code";
         NewKindCode.IsChecked = _settings.NewNoteKind == "code";
         _loadingSettingsUi = false;
@@ -1302,7 +1380,13 @@ public partial class MainWindow : Window
         _settings.WordWrap = SetWrap.IsChecked == true;
         _settings.LineNumbersText = SetNumbersText.IsChecked == true;
         _settings.LineNumbersCode = SetNumbersCode.IsChecked == true;
-        SetSidebar(SetList.IsChecked == true);
+        var notepadWindow = SetNotepadLayout.IsChecked == true;
+        if (notepadWindow != _settings.NotepadLayout)
+        {
+            UseNotepadWindow(notepadWindow);
+            SetList.IsChecked = !_settings.SidebarCollapsed;
+        }
+        else SetSidebar(SetList.IsChecked == true);
         var autoSave = SetAutoSave.IsChecked == true;
         if (autoSave != _settings.AutoSave)
         {
@@ -1618,6 +1702,7 @@ public partial class MainWindow : Window
         new("Code", null, () => SetLanguage(CodeHighlighter.Guess(Ed?.Text ?? "") ?? _settings.LastCode), () => CurrentLanguage != "text"),
         new(null),
         new("Show / hide notes list", "Ctrl+B", () => SetSidebar(_settings.SidebarCollapsed)),
+        new("Notepad style window", null, () => UseNotepadWindow(!_settings.NotepadLayout), () => _settings.NotepadLayout),
         new("Close pane", "Ctrl+W", () => { if (_active is not null && _panes.Count > 1) RemovePane(_active); }),
         new(null),
         new("Line numbers", null, () => { if (CurrentLanguage == "text") _settings.LineNumbersText = !_settings.LineNumbersText; else _settings.LineNumbersCode = !_settings.LineNumbersCode; ApplyAllPanes(); },
@@ -1699,6 +1784,7 @@ public partial class MainWindow : Window
         Themes.Apply(theme);
         foreach (var pane in _panes) pane.ApplyTheme();
         _notesView?.Refresh();   // list items are drawn again, so emoji pick up the new text color
+        if (_settings.NotepadLayout) RebuildTabs();
         UpdatePinIcon();
     }
 

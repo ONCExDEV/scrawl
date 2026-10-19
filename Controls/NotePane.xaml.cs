@@ -23,6 +23,7 @@ public partial class NotePane : UserControl
     {
         InitializeComponent();
         Editor.TextArea.TextView.LineTransformers.Add(_colorizer);
+        Editor.TextArea.TextView.ElementGenerators.Add(new NoBreakGenerator(() => Settings.WordWrap));
         Editor.TextArea.TextView.ElementGenerators.Add(new ColorEmojiGenerator(() => Editor.FontSize, () => (Themes.Get("Text") as SolidColorBrush)?.Color ?? Colors.White));
         Editor.Options.EnableHyperlinks = false;
         Editor.Options.EnableEmailHyperlinks = false;
