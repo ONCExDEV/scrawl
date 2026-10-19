@@ -76,6 +76,7 @@ public partial class MainWindow : Window
         Themes.Apply(Themes.Find(_settings.Theme));
         InitializeComponent();
         SidebarHost.Width = _settings.SidebarCollapsed ? 0 : SidebarWidth;
+        SidebarHost.Visibility = _settings.SidebarCollapsed ? Visibility.Collapsed : Visibility.Visible;
         ApplyWindowStyle();
 
         _saveTimer.Tick += async (_, _) => { _saveTimer.Stop(); await SaveAsync(); };
@@ -468,9 +469,7 @@ public partial class MainWindow : Window
     // ───────────── Order of the notes list ─────────────
 
     /// <summary>Order value that puts a note above all others.</summary>
-    private double TopOrder() => _notes.Count == 0 ? 1 : _notes.Max(n => n.Order) + 1;
-
-    /// <summary>Order value that puts a note below all others (the last tab).</summary>
+    /// <summary>Order value that puts a note after all others: the bottom of the list and the last tab (pinned notes stay in front of it).</summary>
     private double BottomOrder() => _notes.Count == 0 ? 1 : _notes.Min(n => n.Order) - 1;
 
     /// <summary>Notes from before the list could be arranged have no order yet: keep them in the order they were shown (latest edit on top).</summary>
@@ -771,7 +770,7 @@ public partial class MainWindow : Window
         finally
         {
             DropLayer.Visibility = Visibility.Collapsed;
-            ShowTabMarker(-1);
+            ShowTabMarker(-2);
         }
     }
 
@@ -906,7 +905,7 @@ public partial class MainWindow : Window
     {
         if (_notesView is null) return;
         SearchBox.Clear();
-        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Order = _settings.NotepadLayout ? BottomOrder() : TopOrder(), Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
+        var note = new Note { Title = "Untitled note", UpdatedAt = DateTime.Now, Order = BottomOrder(), Language = _settings.NewNoteKind == "code" ? _settings.LastCode : "text" };
         Add(note);
         RefreshNotesView();
         OpenNote(note);
@@ -938,7 +937,14 @@ public partial class MainWindow : Window
         _settings.SidebarCollapsed = !visible;
         var target = visible ? SidebarWidth : 0;
         var animation = new DoubleAnimation(target, TimeSpan.FromMilliseconds(240)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut } };
-        animation.Completed += (_, _) => { SidebarHost.BeginAnimation(WidthProperty, null); SidebarHost.Width = target; };
+        // A hidden list is really gone (not just 0 wide), so it can never flash up while notes change
+        if (visible) SidebarHost.Visibility = Visibility.Visible;
+        animation.Completed += (_, _) =>
+        {
+            SidebarHost.BeginAnimation(WidthProperty, null);
+            SidebarHost.Width = target;
+            if (!visible && _settings.SidebarCollapsed) SidebarHost.Visibility = Visibility.Collapsed;
+        };
         SidebarHost.BeginAnimation(WidthProperty, animation);
     }
 
@@ -1108,7 +1114,7 @@ public partial class MainWindow : Window
     private void DuplicateNote(Note source)
     {
         if (!Readable(source)) return;
-        var copy = new Note { Title = source.Title + " (copy)", Content = source.Content, Language = source.Language, UpdatedAt = DateTime.Now, Order = TopOrder() };
+        var copy = new Note { Title = source.Title + " (copy)", Content = source.Content, Language = source.Language, UpdatedAt = DateTime.Now, Order = BottomOrder() };
         Add(copy);
         RefreshNotesView();
         OpenNote(copy);
@@ -1310,7 +1316,7 @@ public partial class MainWindow : Window
                 };
                 // A new file that looks like code opens as a Code note instead of Notepad (only the first time; the choice is kept afterwards).
                 if (language == "text" && extension is not (".md" or ".log") && snapshot.Text.Length >= 40 && CodeHighlighter.Guess(snapshot.Text) is { } detected) language = detected;
-                last = new Note { OpenedFromFile = true, Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, Order = TopOrder(), FilePath = full };
+                last = new Note { OpenedFromFile = true, Title = Path.GetFileNameWithoutExtension(full), Content = snapshot.Text, Language = language, UpdatedAt = DateTime.Now, Order = BottomOrder(), FilePath = full };
                 _files.Track(last, snapshot);
                 Add(last);
             }

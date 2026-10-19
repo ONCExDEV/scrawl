@@ -274,13 +274,12 @@ internal static class Program
             Console.WriteLine("PASS: the lock dialog creates PIN locked notes");
 
             // Arranging the notes list: dragging gives a note a new order, pinned notes stay on top, everything is remembered.
-            var topOrder = typeof(MainWindow).GetMethod("TopOrder", nonPublic)!;
             var moveNote = typeof(MainWindow).GetMethod("MoveNote", nonPublic)!;
             var view = () => ((System.ComponentModel.ICollectionView)typeof(MainWindow).GetField("_notesView", nonPublic)!.GetValue(window)!).Cast<Note>().Where(n => n.Title.StartsWith("Arr ")).Select(n => n.Title).ToList();
             var arranged = new List<Note>();
             foreach (var title in new[] { "Arr A", "Arr B", "Arr C", "Arr D" })
             {
-                var n = new Note { Title = title, Order = (double)topOrder.Invoke(window, null)! };
+                var n = new Note { Title = title, Order = allNotes.Max(x => x.Order) + 1 };
                 addNote.Invoke(window, [n]);
                 arranged.Add(n);
             }
@@ -313,7 +312,7 @@ internal static class Program
             Assert(new Settings().AutoSave, "automatic saving is on by default");
             Pump((Task)typeof(MainWindow).GetMethod("SaveAsync", nonPublic)!.Invoke(window, null)!);
             settingsField.AutoSave = false;
-            var edited = new Note { Title = "Manual save", Content = "version one", Order = (double)topOrder.Invoke(window, null)! };
+            var edited = new Note { Title = "Manual save", Content = "version one", Order = allNotes.Max(x => x.Order) + 1 };
             addNote.Invoke(window, [edited]);
             queueSave.Invoke(window, null);
             Assert(!timer.IsEnabled && (bool)dirtyField.GetValue(window)! && window.SavedLabel.Text == "Unsaved changes", "with automatic saving off an edit only marks the note as unsaved");
@@ -432,7 +431,21 @@ internal static class Program
             var restOfNotes = ordered.Where(n => n != movedNote).ToList();
             moveNote.Invoke(window, [movedNote, restOfNotes, restOfNotes.Count]);
             Assert(ReferenceEquals(window.TabStrip.Children.OfType<System.Windows.Controls.Border>().Last().Tag, movedNote), "a note moved to the end becomes the last tab");
+            // Tabs and list always show the same order; pinned notes are in front; new notes come after the pinned ones, last.
+            var listView = (System.ComponentModel.ICollectionView)typeof(MainWindow).GetField("_notesView", nonPublic)!.GetValue(window)!;
+            List<Note> TabOrder() => window.TabStrip.Children.OfType<System.Windows.Controls.Border>().Select(t => (Note)t.Tag).ToList();
+            Assert(TabOrder().SequenceEqual(listView.Cast<Note>()), "the tabs and the list have the same order");
+            var lastTab = TabOrder().Last(n => !n.IsPinned);
+            typeof(MainWindow).GetMethod("TogglePin", nonPublic)!.Invoke(window, [lastTab]);
+            Assert(ReferenceEquals(TabOrder()[0], lastTab) && ReferenceEquals(listView.Cast<Note>().First(), lastTab) && TabOrder().SequenceEqual(listView.Cast<Note>()), "a pinned note goes to the front of the tabs and the top of the list");
+            typeof(MainWindow).GetMethod("NewNote", nonPublic)!.Invoke(window, null);
+            var born = windowNotes[^1];
+            Assert(ReferenceEquals(TabOrder().Last(), born) && ReferenceEquals(listView.Cast<Note>().Last(), born) && ReferenceEquals(TabOrder()[0], lastTab), "a new note comes after the pinned ones, at the end of the tabs and the list");
+            typeof(MainWindow).GetMethod("TogglePin", nonPublic)!.Invoke(window, [lastTab]);
+            Assert(!ReferenceEquals(TabOrder()[0], lastTab) && TabOrder().SequenceEqual(listView.Cast<Note>()), "unpinning puts it back in its place");
+            Assert(window.TabStrip.Children.OfType<System.Windows.Controls.Border>().All(t => t.BorderThickness == new System.Windows.Thickness(0)), "no drop marker is left on a tab");
             useNotepad.Invoke(window, [false]);
+            Assert(window.SidebarHost.Visibility == System.Windows.Visibility.Visible, "the notes list is shown again in the normal window");
             Console.WriteLine("PASS: tabs close with a question, new notes go last and deleted notes can be brought back");
 
             // Emoji in color: found in text, drawn by DirectWrite, shown in the editor, the notes list and the title.
